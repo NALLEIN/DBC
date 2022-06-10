@@ -1,0 +1,30 @@
+name: resize_net
+use_tb_logger: true
+model: resize
+distortion: sr
+scale: 2
+gpu_ids: [0]
+scalea: 1
+scaleb: 2
+
+datasets:
+  teste1:
+    name: GT
+    mode: GT
+    dataroot_GT: /media/jianghao/Elements/datasets/kodak # path to validation HR images
+    meta_info_file: /home/jianghao/Code/bytedance/DBC/codes/data/meta_info/kodak.txt
+    num_frame: 1
+    crop_border: 0
+    interval: 1
+    scale: 2
+
+network_G:
+  in_nc: 3
+  out_nc: 3
+  scale: 3
+  init: xavier
+
+#### path
+path:
+  results_root: ~
+  pretrain_model_G: ~

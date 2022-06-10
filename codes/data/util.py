@@ -114,6 +114,7 @@ def augment(img_list, hflip=True, rot=True):
 
     return [_augment(img) for img in img_list]
 
+
 def paired_augment(img_list_GT, img_list_LQ, img_list_codec, hflip=True, rot=True):
     # horizontal flip OR rotate
     hflip = hflip and random.random() < 0.5
@@ -194,14 +195,14 @@ def rgb2ycbcr(img, only_y=True):
     if only_y:
         rlt = np.dot(img, [65.481, 128.553, 24.966]) / 255.0 + 16.0
     else:
-        rlt = np.matmul(img, [[65.481, -37.797, 112.0], [128.553, -74.203, -93.786],
-                              [24.966, 112.0, -18.214]]) / 255.0 + [16, 128, 128]
+        rlt = np.matmul(img, [[65.481, -37.797, 112.0], [128.553, -74.203, -93.786], [24.966, 112.0, -18.214]]) / 255.0 + [16, 128, 128]
     if in_img_type == np.uint8:
         rlt = rlt.round()
     else:
         rlt = rlt.round()
         rlt /= 255.
     return rlt.astype(in_img_type)
+
 
 def bgr2ycbcr(img, only_y=True):
     '''bgr version of rgb2ycbcr
@@ -218,8 +219,7 @@ def bgr2ycbcr(img, only_y=True):
     if only_y:
         rlt = np.dot(img, [24.966, 128.553, 65.481]) / 255.0 + 16.0
     else:
-        rlt = np.matmul(img, [[0.062, 0.439, -0.040], [0.614, -0.339, -0.399],
-                              [0.183, -0.101, 0.439]]) + [16, 128, 128]
+        rlt = np.matmul(img, [[0.062, 0.439, -0.040], [0.614, -0.339, -0.399], [0.183, -0.101, 0.439]]) + [16, 128, 128]
     if in_img_type == np.uint8:
         rlt = rlt.round()
     else:
@@ -239,8 +239,9 @@ def ycbcr2rgb(img):
     if in_img_type != np.uint8:
         img *= 255.
     # convert
-    rlt = np.matmul(img, [[0.00456621, 0.00456621, 0.00456621], [0, -0.00153632, 0.00791071],
-                          [0.00625893, -0.00318811, 0]]) * 255.0 + [-222.921, 135.576, -276.836]
+    rlt = np.matmul(img, [[0.00456621, 0.00456621, 0.00456621], [0, -0.00153632, 0.00791071], [0.00625893, -0.00318811, 0]]) * 255.0 + [
+        -222.921, 135.576, -276.836
+    ]
     if in_img_type == np.uint8:
         rlt = rlt.round()
     else:
@@ -275,18 +276,16 @@ def random_crop(img, ch, cw):
     img = img[top:top + ch, left:left + cw, ...]
     return img
 
+
 def paired_random_crop(img_gt, img_lq, img_codec, crop_size, scale=2):
     h_lq, w_lq, _ = img_lq.shape
     h_gt, w_gt, _ = img_gt.shape
     lq_patch_size = [n // 2 for n in crop_size]
 
     if h_gt != h_lq * scale or w_gt != w_lq * scale:
-        raise ValueError(
-            f'Scale mismatches. GT ({h_gt}, {w_gt}) is not {scale}x ',
-            f'multiplication of LQ ({h_lq}, {w_lq}).')
+        raise ValueError(f'Scale mismatches. GT ({h_gt}, {w_gt}) is not {scale}x ', f'multiplication of LQ ({h_lq}, {w_lq}).')
     if h_lq < lq_patch_size[0] or w_lq < lq_patch_size[1]:
-        raise ValueError(f'LQ ({h_lq}, {w_lq}) is smaller than patch size '
-                         f'({lq_patch_size[0]}, {lq_patch_size[1]}). ')
+        raise ValueError(f'LQ ({h_lq}, {w_lq}) is smaller than patch size ' f'({lq_patch_size[0]}, {lq_patch_size[1]}). ')
     # randomly choose top and left coordinates for lq patch
     top = random.randint(0, h_lq - lq_patch_size[0])
     left = random.randint(0, w_lq - lq_patch_size[1])
@@ -310,9 +309,8 @@ def cubic(x):
     absx = torch.abs(x)
     absx2 = absx**2
     absx3 = absx**3
-    return (1.5 * absx3 - 2.5 * absx2 + 1) * (
-        (absx <= 1).type_as(absx)) + (-0.5 * absx3 + 2.5 * absx2 - 4 * absx + 2) * ((
-            (absx > 1) * (absx <= 2)).type_as(absx))
+    return (1.5 * absx3 - 2.5 * absx2 + 1) * ((absx <= 1).type_as(absx)) + (-0.5 * absx3 + 2.5 * absx2 - 4 * absx + 2) * (((absx > 1) *
+                                                                                                                           (absx <= 2)).type_as(absx))
 
 
 def calculate_weights_indices(in_length, out_length, scale, kernel, kernel_width, antialiasing):
@@ -339,8 +337,7 @@ def calculate_weights_indices(in_length, out_length, scale, kernel, kernel_width
 
     # The indices of the input pixels involved in computing the k-th output
     # pixel are in row k of the indices matrix.
-    indices = left.view(out_length, 1).expand(out_length, P) + torch.linspace(0, P - 1, P).view(
-        1, P).expand(out_length, P)
+    indices = left.view(out_length, 1).expand(out_length, P) + torch.linspace(0, P - 1, P).view(1, P).expand(out_length, P)
 
     # The weights used to compute the k-th output pixel are in row k of the
     # weights matrix.
@@ -378,7 +375,7 @@ def imresize(img_in, scale, antialiasing=True):
     in_b, in_C, in_H, in_W = img_in.size()
     out = []
     for b in range(in_b):
-        img = img_in[b,:,:,:]
+        img = img_in[b, :, :, :]
         _, out_H, out_W = in_C, math.ceil(in_H * scale), math.ceil(in_W * scale)
         kernel_width = 4
         kernel = 'cubic'
@@ -389,10 +386,8 @@ def imresize(img_in, scale, antialiasing=True):
         # Now we do not support this.
 
         # get weights and indices
-        weights_H, indices_H, sym_len_Hs, sym_len_He = calculate_weights_indices(
-            in_H, out_H, scale, kernel, kernel_width, antialiasing)
-        weights_W, indices_W, sym_len_Ws, sym_len_We = calculate_weights_indices(
-            in_W, out_W, scale, kernel, kernel_width, antialiasing)
+        weights_H, indices_H, sym_len_Hs, sym_len_He = calculate_weights_indices(in_H, out_H, scale, kernel, kernel_width, antialiasing)
+        weights_W, indices_W, sym_len_Ws, sym_len_We = calculate_weights_indices(in_W, out_W, scale, kernel, kernel_width, antialiasing)
         # process H dimension
         # symmetric copying
         img_aug = torch.FloatTensor(in_C, in_H + sym_len_Hs + sym_len_He, in_W)
@@ -439,7 +434,7 @@ def imresize(img_in, scale, antialiasing=True):
             out_2[1, :, i] = out_1_aug[1, :, idx:idx + kernel_width].mv(weights_W[i])
             out_2[2, :, i] = out_1_aug[2, :, idx:idx + kernel_width].mv(weights_W[i])
         out.append(out_2)
-    out = torch.stack(out,dim=0)
+    out = torch.stack(out, dim=0)
     return out
 
 
@@ -460,10 +455,8 @@ def imresize_np(img, scale, antialiasing=True):
     # Now we do not support this.
 
     # get weights and indices
-    weights_H, indices_H, sym_len_Hs, sym_len_He = calculate_weights_indices(
-        in_H, out_H, scale, kernel, kernel_width, antialiasing)
-    weights_W, indices_W, sym_len_Ws, sym_len_We = calculate_weights_indices(
-        in_W, out_W, scale, kernel, kernel_width, antialiasing)
+    weights_H, indices_H, sym_len_Hs, sym_len_He = calculate_weights_indices(in_H, out_H, scale, kernel, kernel_width, antialiasing)
+    weights_W, indices_W, sym_len_Ws, sym_len_We = calculate_weights_indices(in_W, out_W, scale, kernel, kernel_width, antialiasing)
     # process H dimension
     # symmetric copying
     img_aug = torch.FloatTensor(in_H + sym_len_Hs + sym_len_He, in_W, in_C)
@@ -511,20 +504,16 @@ def imresize_np(img, scale, antialiasing=True):
     return out_2.numpy()
 
 
-
-
 def cubic(x):
     absx = np.abs(x)
-    absx2 = absx ** 2
-    absx3 = absx ** 3
-    return ((1.5 * absx3 - 2.5 * absx2 + 1) * (absx <= 1) +
-            (-0.5 * absx3 + 2.5 * absx2 - 4 * absx + 2) * ((1 < absx) & (absx <= 2)))
+    absx2 = absx**2
+    absx3 = absx**3
+    return ((1.5 * absx3 - 2.5 * absx2 + 1) * (absx <= 1) + (-0.5 * absx3 + 2.5 * absx2 - 4 * absx + 2) * ((1 < absx) & (absx <= 2)))
 
 
 def lanczos2(x):
     pi = np.pi
-    return (((np.sin(pi * x) * np.sin(pi * x / 2) + np.finfo(np.float32).eps) /
-             ((pi ** 2 * x ** 2 / 2) + np.finfo(np.float32).eps)) * (abs(x) < 2))
+    return (((np.sin(pi * x) * np.sin(pi * x / 2) + np.finfo(np.float32).eps) / ((pi**2 * x**2 / 2) + np.finfo(np.float32).eps)) * (abs(x) < 2))
 
 
 def box(x):
@@ -574,6 +563,7 @@ def fix_scale_and_size(input_shape, output_shape, scale_factor):
 
     return scale_factor, output_shape
 
+
 def imresize_numpy(im, scale_factor=None, output_shape=None, kernel=None, antialiasing=True):
     scale_factor, output_shape = fix_scale_and_size(im.shape, output_shape, scale_factor)
 
@@ -586,8 +576,7 @@ def imresize_numpy(im, scale_factor=None, output_shape=None, kernel=None, antial
         if scale_factor[dim] == 1.0:
             continue
 
-        weights, field_of_view = contributions(im.shape[dim], output_shape[dim], scale_factor[dim],
-                                               method, kernel_width, antialiasing)
+        weights, field_of_view = contributions(im.shape[dim], output_shape[dim], scale_factor[dim], method, kernel_width, antialiasing)
         out_im = resize_along_dim(out_im, dim, weights, field_of_view)
 
     return out_im
@@ -603,14 +592,14 @@ def contributions(in_length, out_length, scale, kernel, kernel_width, antialiasi
     left_boundary = np.floor(match_coordinates - kernel_width / 2)
     expanded_kernel_width = np.ceil(kernel_width)
 
-    field_of_view = np.expand_dims(left_boundary, axis=1) + np.arange(1, expanded_kernel_width+1)
+    field_of_view = np.expand_dims(left_boundary, axis=1) + np.arange(1, expanded_kernel_width + 1)
     field_of_view = field_of_view.astype("int64")
 
     weights = fixed_kernel(1.0 * np.expand_dims(match_coordinates, axis=1) - field_of_view)
     sum_weights = np.sum(weights, axis=1, keepdims=True)
     sum_weights[sum_weights == 0] = 1.0
     weights = np.divide(weights, sum_weights)
-    field_of_view = np.clip(field_of_view - 1, 0, in_length-1)
+    field_of_view = np.clip(field_of_view - 1, 0, in_length - 1)
 
     return weights, field_of_view
 
@@ -624,6 +613,7 @@ def resize_along_dim(im, dim, weights, field_of_view):
         tmp_out_im = np.sum(tmp_im[:, field_of_view] * weights, axis=-2)
 
     return np.swapaxes(tmp_out_im, dim, 1)
+
 
 if __name__ == '__main__':
     # test imresize function
@@ -643,5 +633,4 @@ if __name__ == '__main__':
     print('average time: {}'.format(total_time / 10))
 
     import torchvision.utils
-    torchvision.utils.save_image((rlt * 255).round() / 255, 'rlt.png', nrow=1, padding=0,
-                                 normalize=False)
+    torchvision.utils.save_image((rlt * 255).round() / 255, 'rlt.png', nrow=1, padding=0, normalize=False)

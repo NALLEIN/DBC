@@ -93,7 +93,7 @@ class Vimeo90KDataset(data.Dataset):
             img_GT = util.read_img(None, GT_path, None)
             # if (GT_size == None):
             #     GT_size = 2
-            
+
             # img_GT = util.modcrop(img_GT, GT_size)
             # img_GT = util.bgr2ycbcr(img_GT,False)
             # img_LQ = util.imresize_np(img_GT, 1 / scale, True)
@@ -103,13 +103,12 @@ class Vimeo90KDataset(data.Dataset):
             # BGR => RGB
             img_GT = img_GT[:, :, [2, 1, 0]]
             img_list_GT.append(img_GT)
-            
+
             # img_list_LQ.append(img_LQ)
 
         # img_list_LQ = [img_LQ[:, :, [2, 1, 0]] for img_LQ in img_list_LQ]
         # img_list_GT = [img_GT[:, :, [2, 1, 0]] for img_GT in img_list_GT]
-        img_list_GT = torch.from_numpy(np.ascontiguousarray(np.transpose(np.concatenate(img_list_GT, axis=2),
-                                                                         (2, 0, 1)))).float()
+        img_list_GT = torch.from_numpy(np.ascontiguousarray(np.transpose(np.concatenate(img_list_GT, axis=2), (2, 0, 1)))).float()
         # img_list_LQ = torch.from_numpy(np.ascontiguousarray(np.transpose(np.concatenate(img_list_LQ,axis=2), (2, 0, 1)))).float()
         GT_path = str(self.gt_root / (clip + '_' + seq))
 

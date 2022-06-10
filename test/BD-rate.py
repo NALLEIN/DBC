@@ -152,7 +152,7 @@ for m in mode:
     matplotlib.rc('font', **font)
     LineWidth = 1
     plt.grid()
-    plt.xlabel('kbps')
+    plt.xlabel('bpp')
     plt.ylabel('PSNR(dB)')
     plt.legend()
     plt.savefig(args.path + "/" + m + "_PSNR.png", format='png', dpi=300, bbox_inches='tight')
@@ -165,7 +165,7 @@ for m in ssimmode:
     matplotlib.rc('font', **font)
     LineWidth = 1
     plt.grid()
-    plt.xlabel('kbps')
+    plt.xlabel('bpp')
     plt.ylabel('SSIM')
     plt.legend()
     plt.savefig(args.path + "/" + m + "_SSIM.png", format='png', dpi=300, bbox_inches='tight')

@@ -32,7 +32,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-opt',
                         type=str,
-                        default='/home/jianghao/Code/Graduation/4k1/codes/options/train/train_4k.yml',
+                        default='/home/jianghao/Code/bytedance/DBC/codes/options/train/train_resize.yml',
                         help='Path to option YMAL file.')
     parser.add_argument('--launcher', choices=['none', 'pytorch'], default='none', help='job launcher')
     parser.add_argument('--local_rank', type=int, default=0)
@@ -177,56 +177,43 @@ def main():
                     model.feed_data(val_data)
                     model.test()
                     visuals = model.get_current_visuals()
-                    # sr_img = util.tensor2img(visuals['SR'])  # uint8
-                    # gt_img = util.tensor2img(visuals['GT'])  # uint8
-                    # sr_bic_img = util.tensor2img(visuals['SR_bic'])
 
-                    # lr_img = util.tensor2img(visuals['LR'])
+                    lr = util.tensor2img(visuals['lr'])  # uint8
+                    lr_codec = util.tensor2img(visuals['lr_codec'])  # uint8
+                    hr_rec = util.tensor2img(visuals['hr_rec'])
+                    gt = util.tensor2img(visuals['gt'])
 
-                    # gtl_img = util.tensor2img(visuals['LR_ref'])
+                    # # Save images for visualization
+                    save_img_path = os.path.join(img_dir, '{:s}_lr_{:d}.png'.format(img_name, current_step))
+                    util.save_img(lr, save_img_path)
+                    save_img_path_L = os.path.join(img_dir, '{:s}_lr_codec_{:d}.png'.format(img_name, current_step))
+                    util.save_img(lr_codec, save_img_path_L)
+                    save_img_path_L = os.path.join(img_dir, '{:s}_hr_rec_{:d}.png'.format(img_name, current_step))
+                    util.save_img(hr_rec, save_img_path_L)
 
-                    # # Save SR images for reference
-                    # save_img_path = os.path.join(img_dir, '{:s}_{:d}.png'.format(img_name, current_step))
-                    # util.save_img(sr_img, save_img_path)
+                    # Save ground truth
+                    if current_step == opt['train']['val_freq']:
 
-                    # save_img_path_L = os.path.join(img_dir, '{:s}_forwLR_{:d}.png'.format(img_name, current_step))
-                    # util.save_img(lr_img, save_img_path_L)
-
-                    # # Save ground truth
-                    # if current_step == opt['train']['val_freq']:
-
-                    #     save_img_path_gt = os.path.join(img_dir, '{:s}_GT_{:d}.png'.format(img_name, current_step))
-                    #     util.save_img(gt_img, save_img_path_gt)
-
-                    #     save_img_path_bic = os.path.join(img_dir, '{:s}_BIC_{:d}.png'.format(img_name, current_step))
-                    #     util.save_img(sr_bic_img, save_img_path_bic)
-
-                    #     save_img_path_refl = os.path.join(img_dir, '{:s}_REFL_{:d}.png'.format(img_name, current_step))
-                    #     util.save_img(gtl_img, save_img_path_refl)
+                        save_img_path_gt = os.path.join(img_dir, '{:s}_GT_{:d}.png'.format(img_name, current_step))
+                        util.save_img(gt, save_img_path_gt)
 
                     # calculate PSNR
-                    '''crop_size = opt['scale']
-                    sr_img_y = bgr2ycbcr(sr_img, only_y=True)
-                    gt_img_y = bgr2ycbcr(gt_img, only_y=True)
-                    sr_bic_img_y = bgr2ycbcr(sr_bic_img, only_y=True)
-                    cropped_sr_img = sr_img[crop_size:-crop_size, crop_size:-crop_size]
-                    cropped_gt_img = gt_img[crop_size:-crop_size, crop_size:-crop_size]
-                    cropped_sr_bic_img = sr_bic_img[crop_size:-crop_size, crop_size:-crop_size]'''
 
-                    avg_psnr += visuals['PSNR']
-                    avg_bic_psnr += visuals['PSNR_fix']
-                    logger_val.info('# Validation # PSNR: {:.4e}.'.format(visuals['PSNR']))
-                    logger_val.info('# Validation # fix PSNR: {:.4e}.'.format(visuals['PSNR_fix']))
+                    avg_psnr += visuals['PSNR_net']
+                    # avg_bic_psnr += visuals['PSNR_fix']
+                    logger_val.info('# Validation {:s} # net PSNR: {:.4e}.'.format(img_name, visuals['PSNR_net']))
+                    # logger_val.info('# Validation # fix PSNR: {:.4e}.'.format(visuals['PSNR_fix']))
 
                 avg_psnr = avg_psnr / idx
                 avg_bic_psnr = avg_bic_psnr / idx
 
                 # log
-                logger.info('# Validation # PSNR: {:.4e}.'.format(avg_psnr))
-                logger.info('# Validation # fix PSNR: {:.4e}.'.format(avg_bic_psnr))
+                logger.info('# Validation # net PSNR: {:.4e}.'.format(avg_psnr))
+                # logger.info('# Validation # fix PSNR: {:.4e}.'.format(avg_bic_psnr))
 
-                logger_val.info('<epoch:{:3d}, iter:{:8,d}> psnr: {:.4e}.'.format(epoch, current_step, avg_psnr))
-                logger_val.info('<epoch:{:3d}, iter:{:8,d}> fix psnr: {:.4e}.'.format(epoch, current_step, avg_bic_psnr))
+                logger_val.info('<epoch:{:3d}, iter:{:8,d}> net psnr: {:.4e}.'.format(epoch, current_step, avg_psnr))
+                # logger_val.info('<epoch:{:3d}, iter:{:8,d}> fix psnr: {:.4e}.'.format(epoch, current_step, avg_bic_psnr))
+
                 # tensorboard logger
 
             #### save models and training states

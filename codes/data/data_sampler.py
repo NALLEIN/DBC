@@ -26,7 +26,6 @@ class DistIterSampler(Sampler):
             distributed training.
         rank (optional): Rank of the current process within num_replicas.
     """
-
     def __init__(self, dataset, num_replicas=None, rank=None, ratio=100):
         if num_replicas is None:
             if not dist.is_available():

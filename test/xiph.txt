@@ -1,8 +1,0 @@
-/media/jianghao/MyPassport/xiph_yuv/aspen_1080p.yuv
-/media/jianghao/MyPassport/xiph_yuv/controlled_burn_1080p.yuv
-/media/jianghao/MyPassport/xiph_yuv/red_kayak_1080p.yuv
-/media/jianghao/MyPassport/xiph_yuv/rush_field_cuts_1080p.yuv
-/media/jianghao/MyPassport/xiph_yuv/snow_mnt_1080p.yuv
-/media/jianghao/MyPassport/xiph_yuv/speed_bag_1080p.yuv
-/media/jianghao/MyPassport/xiph_yuv/touchdown_pass_1080p.yuv
-/media/jianghao/MyPassport/xiph_yuv/west_wind_easy_1080p.yuv

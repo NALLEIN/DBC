@@ -1,56 +1,58 @@
+import os.path as osp
+import random
+import pickle
+import logging
 import numpy as np
+import cv2
+import lmdb
 import torch
 import torch.utils.data as data
 import data.util as util
-import random
+
+from pathlib import Path
+
 
 class GTDataset(data.Dataset):
-    '''Read LR images only in the test phase.'''
-
+    '''
+    Reading the training Flicker dataset
+    key example: 000/00001.png
+    GT: Ground-Truth;
+    LQ: Low-Quality, e.g., low-resolution frames
+    support reading N HR frames, N = 3, 5, 7
+    '''
     def __init__(self, opt):
         super(GTDataset, self).__init__()
         self.opt = opt
-        self.data_type = self.opt['data_type']
-        self.paths_LQ, self.paths_GT = None, None
-        self.sizes_LQ, self.sizes_GT = None, None
-        self.LQ_env, self.GT_env = None, None  # environment for lmdb
-
-        self.paths_GT, self.sizes_GT = util.get_image_paths(self.data_type, opt['dataroot_GT'])
-        self.paths_LQ, self.sizes_LQ = util.get_image_paths(self.data_type, opt['dataroot_LQ'])
-        assert self.paths_GT, 'Error: GT path is empty.'
-        if self.paths_LQ and self.paths_GT:
-            assert len(self.paths_LQ) == len(
-                self.paths_GT
-            ), 'GT and LQ datasets have different number of images - {}, {}.'.format(
-                len(self.paths_LQ), len(self.paths_GT))
-        self.random_scale_list = [1]
-
-
+        self.gt_root = Path(opt['dataroot_GT'])
+        self.keys = []
+        with open(opt['meta_info_file'], 'r') as fin:
+            self.keys = [line.split('\n')[0] for line in fin]
+        # begin = int(self.opt['begin'])
+        # end = int(self.opt['end']) + 1
+        # self.keys.extend([f'{i:06d}' for i in range(begin, end, 1)])
 
     def __getitem__(self, index):
-        GT_path = self.paths_GT[index]
-        scale = self.opt['scale']
-        GT_size = self.opt['GT_size']
+        key = self.keys[index]
+        # center_frame_idx = int(key)
+        # self.neighbor_list = [center_frame_idx]
+        GT_path = str(self.gt_root / key)
+        img_list_GT = []
 
-        resolution = None
-
-        img_GT = util.read_img(self.GT_env, GT_path, resolution)
-
-        if self.opt['color']:
-            img_GT = util.channel_convert(img_GT.shape[2], self.opt['color'], [img_GT])[0]
-
-
-        if img_GT.shape[2] == 3:
-            img_GT = img_GT[:, :, [2, 1, 0]]
-        if (GT_size):
-            H_s, W_s, _ = img_GT.shape
-            hs = random.randint(0,H_s-GT_size-1)
-            ws = random.randint(0,W_s-GT_size-1)
-            img_GT = img_GT[hs:hs+GT_size,ws:ws+GT_size,:]
-
-        img_GT = torch.from_numpy(np.ascontiguousarray(np.transpose(img_GT, (2, 0, 1)))).float()
-        return {'GT': img_GT, 'GT_path': GT_path}
+        crop_border = self.opt['crop_border']  # used for test
+        img_GT = util.read_img(None, GT_path, None)
+        # BGR => RGB
+        img_GT = img_GT[:, :, [2, 1, 0]]
+        if crop_border is None:
+            img_GT = util.random_crop(img_GT, 256, 256)
+        # else:
+        #     h, w, _ = img_GT.shape
+        #     h = h // 8 * 8
+        #     w = w // 8 * 8
+        #     img_GT = img_GT[:h, :w, :]
+        img_list_GT.append(img_GT)
+        img_list_GT = util.augment(img_list_GT)
+        img_list_GT = torch.from_numpy(np.ascontiguousarray(np.transpose(np.concatenate(img_list_GT, axis=2), (2, 0, 1)))).float()
+        return {'GT': img_list_GT, 'LQ_path': GT_path, 'GT_path': GT_path}
 
     def __len__(self):
-        return len(self.paths_GT)
-
+        return len(self.keys)
