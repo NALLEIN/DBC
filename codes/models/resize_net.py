@@ -16,6 +16,7 @@ import sys
 
 from models.modules.resize import ResizeNet
 from models.modules.google import ScaleHyperprior, RateDistortionLoss
+from compressai.zoo.image import _load_model
 
 sys.path.append("..")
 logger = logging.getLogger('base')
@@ -35,9 +36,10 @@ class ResizeModel(BaseModel):
         self.train_opt = train_opt
         self.test_opt = test_opt
 
-        self.criterion = RateDistortionLoss(lmbda=0.001)
+        self.criterion = RateDistortionLoss(lmbda=1e-2, metrics='mse')
         self.netG = ResizeNet().to(self.device)
-        self.netA = ScaleHyperprior(192, 320).to(self.device)  # 128, 192
+        # self.netA = ScaleHyperprior(192, 320).to(self.device)  # 128, 192
+        self.netA = _load_model("bmshj2018-hyperprior", "mse", 1)
 
         if opt['dist']:
             self.netG = DistributedDataParallel(self.netG, device_ids=[torch.cuda.current_device()])
@@ -150,6 +152,7 @@ class ResizeModel(BaseModel):
         self.log_dict['rate'] = loss_rd['mse_loss'].item()
         self.log_dict['rdloss'] = loss_rd['loss'].item()
 
+    @torch.no_grad()
     def test(self):
         self.netG.eval()
         self.netA.eval()

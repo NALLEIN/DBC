@@ -32,7 +32,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-opt',
                         type=str,
-                        default='/home/jianghao/Code/bytedance/DBC/codes/options/train/train_resize.yml',
+                        default='codes/options/train/train_resize.yml',
                         help='Path to option YMAL file.')
     parser.add_argument('--launcher', choices=['none', 'pytorch'], default='none', help='job launcher')
     parser.add_argument('--local_rank', type=int, default=0)
@@ -184,12 +184,13 @@ def main():
                     gt = util.tensor2img(visuals['gt'])
 
                     # # Save images for visualization
-                    save_img_path = os.path.join(img_dir, '{:s}_lr_{:d}.png'.format(img_name, current_step))
-                    util.save_img(lr, save_img_path)
-                    save_img_path_L = os.path.join(img_dir, '{:s}_lr_codec_{:d}.png'.format(img_name, current_step))
-                    util.save_img(lr_codec, save_img_path_L)
-                    save_img_path_L = os.path.join(img_dir, '{:s}_hr_rec_{:d}.png'.format(img_name, current_step))
-                    util.save_img(hr_rec, save_img_path_L)
+                    if current_step % (opt['train']['val_freq'] * 10) == 0:
+                        save_img_path = os.path.join(img_dir, '{:s}_lr_{:d}.png'.format(img_name, current_step))
+                        util.save_img(lr, save_img_path)
+                        save_img_path_L = os.path.join(img_dir, '{:s}_lr_codec_{:d}.png'.format(img_name, current_step))
+                        util.save_img(lr_codec, save_img_path_L)
+                        save_img_path_L = os.path.join(img_dir, '{:s}_hr_rec_{:d}.png'.format(img_name, current_step))
+                        util.save_img(hr_rec, save_img_path_L)
 
                     # Save ground truth
                     if current_step == opt['train']['val_freq']:
