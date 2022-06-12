@@ -19,7 +19,7 @@
 #         print(key)
 
 
-#ICCP warning
+#alleviate ICCP warning
 import os
 from tqdm import tqdm
 import cv2
