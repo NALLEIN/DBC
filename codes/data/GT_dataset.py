@@ -50,7 +50,8 @@ class GTDataset(data.Dataset):
         #     w = w // 8 * 8
         #     img_GT = img_GT[:h, :w, :]
         img_list_GT.append(img_GT)
-        img_list_GT = util.augment(img_list_GT)
+        if crop_border is None:
+            img_list_GT = util.augment(img_list_GT)
         img_list_GT = torch.from_numpy(np.ascontiguousarray(np.transpose(np.concatenate(img_list_GT, axis=2), (2, 0, 1)))).float()
         return {'GT': img_list_GT, 'LQ_path': GT_path, 'GT_path': GT_path}
 

@@ -36,10 +36,11 @@ class ResizeModel(BaseModel):
         self.train_opt = train_opt
         self.test_opt = test_opt
 
-        self.criterion = RateDistortionLoss(lmbda=1e-2, metrics='mse')
+        self.criterion = RateDistortionLoss(lmbda=1e-1, metrics='mse')
         self.netG = ResizeNet().to(self.device)
         # self.netA = ScaleHyperprior(192, 320).to(self.device)  # 128, 192
         self.netA = bmshj2018_hyperprior(quality=7, metric="mse", pretrained=True).to(self.device)
+        self.valnetA = bmshj2018_hyperprior(quality=7, metric="mse", pretrained=True).to(self.device)
 
         if opt['dist']:
             self.netG = DistributedDataParallel(self.netG, device_ids=[torch.cuda.current_device()])
@@ -156,6 +157,7 @@ class ResizeModel(BaseModel):
     def test(self):
         self.netG.eval()
         self.netA.eval()
+        self.valnetA.eval()
         with torch.no_grad():
             lr, theta = self.netG(self.real_H)
             out_net = self.netA(lr)
@@ -164,14 +166,17 @@ class ResizeModel(BaseModel):
             out_net['x_hat'] = hr_rec
             loss_rd = self.criterion(out_net, self.real_H)
 
+            val_net = self.valnetA(self.real_H)
+            loss_val = self.criterion(val_net, self.real_H)
             # used for visualization
             self.lr = lr
             self.lr_codec = lr_codec
             self.hr_rec = hr_rec
             self.gt = self.real_H
-            self.bpp_fix = None
-            self.bpp_net = loss_rd['loss']
-            self.psnr_fix = None
+            self.valrec = val_net['x_hat']
+            self.bpp_fix = loss_val['bpp_loss']
+            self.bpp_net = loss_rd['bpp_loss']
+            self.psnr_fix = 10 * torch.log10(1**2 / torch.mean((self.real_H - val_net['x_hat'])**2))
             self.psnr_net = 10 * torch.log10(1**2 / torch.mean((self.real_H - hr_rec)**2))
 
     @torch.no_grad()
@@ -201,10 +206,11 @@ class ResizeModel(BaseModel):
         out_dict['lr_codec'] = self.lr_codec.detach().float().cpu()
         out_dict['hr_rec'] = self.hr_rec.detach().float().cpu()
         out_dict['gt'] = self.real_H.detach().float().cpu()
+        out_dict['valnet'] = self.valrec.detach().float().cpu()
         out_dict['bpp_net'] = self.bpp_net.detach().item()
-        out_dict['bpp_fix'] = 100.0 # self.bpp_fix.detach().item()
+        out_dict['bpp_fix'] = self.bpp_fix.detach().item()
         out_dict['PSNR_net'] = self.psnr_net.detach().item()
-        out_dict['PSNR_fix'] = 100.0 # self.psnr_fix.detach().item()
+        out_dict['PSNR_fix'] = self.psnr_fix.detach().item()
 
         return out_dict
 

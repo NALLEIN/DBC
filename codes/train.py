@@ -182,6 +182,7 @@ def main():
                     lr_codec = util.tensor2img(visuals['lr_codec'])  # uint8
                     hr_rec = util.tensor2img(visuals['hr_rec'])
                     gt = util.tensor2img(visuals['gt'])
+                    valnet = util.tensor2img(visuals['valnet'])
 
                     # # Save images for visualization
                     if current_step % (opt['train']['val_freq'] * 10) == 0:
@@ -197,23 +198,24 @@ def main():
 
                         save_img_path_gt = os.path.join(img_dir, '{:s}_GT_{:d}.png'.format(img_name, current_step))
                         util.save_img(gt, save_img_path_gt)
-
+                        save_img_path_gt = os.path.join(img_dir, '{:s}_valnet_{:d}.png'.format(img_name, current_step))
+                        util.save_img(valnet, save_img_path_gt)
                     # calculate PSNR
 
                     avg_psnr += visuals['PSNR_net']
-                    # avg_bic_psnr += visuals['PSNR_fix']
+                    avg_bic_psnr += visuals['PSNR_fix']
                     logger_val.info('# Validation {:s} # net PSNR: {:.4e}.'.format(img_name, visuals['PSNR_net']))
-                    # logger_val.info('# Validation # fix PSNR: {:.4e}.'.format(visuals['PSNR_fix']))
+                    logger_val.info('# Validation {:s} # fix PSNR: {:.4e}.'.format(img_name, visuals['PSNR_fix']))
 
                 avg_psnr = avg_psnr / idx
                 avg_bic_psnr = avg_bic_psnr / idx
 
                 # log
                 logger.info('# Validation # net PSNR: {:.4e}.'.format(avg_psnr))
-                # logger.info('# Validation # fix PSNR: {:.4e}.'.format(avg_bic_psnr))
+                logger.info('# Validation # fix PSNR: {:.4e}.'.format(avg_bic_psnr))
 
                 logger_val.info('<epoch:{:3d}, iter:{:8,d}> net psnr: {:.4e}.'.format(epoch, current_step, avg_psnr))
-                # logger_val.info('<epoch:{:3d}, iter:{:8,d}> fix psnr: {:.4e}.'.format(epoch, current_step, avg_bic_psnr))
+                logger_val.info('<epoch:{:3d}, iter:{:8,d}> fix psnr: {:.4e}.'.format(epoch, current_step, avg_bic_psnr))
 
                 # tensorboard logger
 
