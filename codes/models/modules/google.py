@@ -28,6 +28,7 @@
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import math
+from sre_constants import CH_LOCALE
 import warnings
 
 import torch
@@ -61,7 +62,6 @@ class CompressionModel(nn.Module):
         entropy_bottleneck_channels (int): Number of channels of the entropy
             bottleneck
     """
-
     def __init__(self, entropy_bottleneck_channels, init_weights=None):
         super().__init__()
         self.entropy_bottleneck = EntropyBottleneck(entropy_bottleneck_channels)
@@ -76,9 +76,7 @@ class CompressionModel(nn.Module):
         """Return the aggregated loss over the auxiliary entropy bottleneck
         module(s).
         """
-        aux_loss = sum(
-            m.loss() for m in self.modules() if isinstance(m, EntropyBottleneck)
-        )
+        aux_loss = sum(m.loss() for m in self.modules() if isinstance(m, EntropyBottleneck))
         return aux_loss
 
     def forward(self, *args):
@@ -127,7 +125,6 @@ class FactorizedPrior(CompressionModel):
         M (int): Number of channels in the expansion layers (last layer of the
             encoder and last layer of the hyperprior decoder)
     """
-
     def __init__(self, N, M, **kwargs):
         super().__init__(entropy_bottleneck_channels=M, **kwargs)
 
@@ -212,7 +209,6 @@ class ScaleHyperprior(CompressionModel):
         M (int): Number of channels in the expansion layers (last layer of the
             encoder and last layer of the hyperprior decoder)
     """
-
     def __init__(self, N, M, **kwargs):
         super().__init__(entropy_bottleneck_channels=N, **kwargs)
 
@@ -259,19 +255,50 @@ class ScaleHyperprior(CompressionModel):
 
     @property
     def downsampling_factor(self) -> int:
-        return 2 ** (4 + 2)
+        return 2**(4 + 2)
 
-    def forward(self, x):
+    def forward(self, x, theta):
+        # y = self.g_a(x)
+        # z = self.h_a(torch.abs(y))
+        # z_hat, z_likelihoods = self.entropy_bottleneck(z)
+        # scales_hat = self.h_s(z_hat)
+        # y_hat, y_likelihoods = self.gaussian_conditional(y, scales_hat)
+        # x_hat = self.g_s(y_hat)
+
         y = self.g_a(x)
         z = self.h_a(torch.abs(y))
         z_hat, z_likelihoods = self.entropy_bottleneck(z)
         scales_hat = self.h_s(z_hat)
-        y_hat, y_likelihoods = self.gaussian_conditional(y, scales_hat)
-        x_hat = self.g_s(y_hat)
 
+        B, _, H, W = y.shape
+        assert B == theta.shape[0], 'resize params not compatible'
+        rh = torch.full(theta.size(), H, dtype=torch.int32).cuda()
+        rw = torch.full(theta.size(), W, dtype=torch.int32).cuda()
+        ch = torch.minimum(torch.ceil(H * theta).to(torch.int32).cuda(), rh)
+        cw = torch.minimum(torch.ceil(W * theta).to(torch.int32).cuda(), rw)
+        ph = rh - ch
+        pw = rw - cw
+
+        y_hat_list = []
+        y_liklihood_list = []
+        for i in range(B):
+            y_i = y[i:i + 1, :, 0:ch[i][0], 0:cw[i][0]]
+            scale_hat_i = scales_hat[i:i + 1, :, 0:ch[i][0], 0:cw[i][0]]
+            _y, _y_likelihoods = self.gaussian_conditional(y_i, scale_hat_i)
+
+            _y = F.pad(_y, [0, pw[i][0], 0, ph[i][0]])
+            _y_likelihoods = _y_likelihoods.reshape(-1, )
+            y_hat_list.append(_y)
+            y_liklihood_list.append(_y_likelihoods)
+        y_hat = torch.cat(y_hat_list, axis=0)
+        y_likelihoods = torch.cat(y_liklihood_list, axis=0)
+        x_hat = self.g_s(y_hat)
         return {
             "x_hat": x_hat,
-            "likelihoods": {"y": y_likelihoods, "z": z_likelihoods},
+            "likelihoods": {
+                "y": y_likelihoods,
+                "z": z_likelihoods
+            },
         }
 
     def load_state_dict(self, state_dict):
@@ -321,7 +348,6 @@ class ScaleHyperprior(CompressionModel):
         return {"x_hat": x_hat}
 
 
-
 class MeanScaleHyperprior(ScaleHyperprior):
     r"""Scale Hyperprior with non zero-mean Gaussian conditionals from D.
     Minnen, J. Balle, G.D. Toderici: `"Joint Autoregressive and Hierarchical
@@ -333,7 +359,6 @@ class MeanScaleHyperprior(ScaleHyperprior):
         M (int): Number of channels in the expansion layers (last layer of the
             encoder and last layer of the hyperprior decoder)
     """
-
     def __init__(self, N, M, **kwargs):
         super().__init__(N, M, **kwargs)
 
@@ -364,7 +389,10 @@ class MeanScaleHyperprior(ScaleHyperprior):
 
         return {
             "x_hat": x_hat,
-            "likelihoods": {"y": y_likelihoods, "z": z_likelihoods},
+            "likelihoods": {
+                "y": y_likelihoods,
+                "z": z_likelihoods
+            },
         }
 
     def compress(self, x):
@@ -386,9 +414,7 @@ class MeanScaleHyperprior(ScaleHyperprior):
         gaussian_params = self.h_s(z_hat)
         scales_hat, means_hat = gaussian_params.chunk(2, 1)
         indexes = self.gaussian_conditional.build_indexes(scales_hat)
-        y_hat = self.gaussian_conditional.decompress(
-            strings[0], indexes, means=means_hat
-        )
+        y_hat = self.gaussian_conditional.decompress(strings[0], indexes, means=means_hat)
         x_hat = self.g_s(y_hat).clamp_(0, 1)
         return {"x_hat": x_hat}
 
@@ -404,7 +430,6 @@ class JointAutoregressiveHierarchicalPriors(MeanScaleHyperprior):
         M (int): Number of channels in the expansion layers (last layer of the
             encoder and last layer of the hyperprior decoder)
     """
-
     def __init__(self, N=192, M=192, **kwargs):
         super().__init__(N=N, M=M, **kwargs)
 
@@ -452,9 +477,7 @@ class JointAutoregressiveHierarchicalPriors(MeanScaleHyperprior):
             nn.Conv2d(M * 8 // 3, M * 6 // 3, 1),
         )
 
-        self.context_prediction = MaskedConv2d(
-            M, 2 * M, kernel_size=5, padding=2, stride=1
-        )
+        self.context_prediction = MaskedConv2d(M, 2 * M, kernel_size=5, padding=2, stride=1)
 
         self.gaussian_conditional = GaussianConditional(None)
         self.N = int(N)
@@ -462,7 +485,7 @@ class JointAutoregressiveHierarchicalPriors(MeanScaleHyperprior):
 
     @property
     def downsampling_factor(self) -> int:
-        return 2 ** (4 + 2)
+        return 2**(4 + 2)
 
     def forward(self, x):
         y = self.g_a(x)
@@ -470,20 +493,19 @@ class JointAutoregressiveHierarchicalPriors(MeanScaleHyperprior):
         z_hat, z_likelihoods = self.entropy_bottleneck(z)
         params = self.h_s(z_hat)
 
-        y_hat = self.gaussian_conditional.quantize(
-            y, "noise" if self.training else "dequantize"
-        )
+        y_hat = self.gaussian_conditional.quantize(y, "noise" if self.training else "dequantize")
         ctx_params = self.context_prediction(y_hat)
-        gaussian_params = self.entropy_parameters(
-            torch.cat((params, ctx_params), dim=1)
-        )
+        gaussian_params = self.entropy_parameters(torch.cat((params, ctx_params), dim=1))
         scales_hat, means_hat = gaussian_params.chunk(2, 1)
         _, y_likelihoods = self.gaussian_conditional(y, scales_hat, means=means_hat)
         x_hat = self.g_s(y_hat)
 
         return {
             "x_hat": x_hat,
-            "likelihoods": {"y": y_likelihoods, "z": z_likelihoods},
+            "likelihoods": {
+                "y": y_likelihoods,
+                "z": z_likelihoods
+            },
         }
 
     @classmethod
@@ -497,10 +519,7 @@ class JointAutoregressiveHierarchicalPriors(MeanScaleHyperprior):
 
     def compress(self, x):
         if next(self.parameters()).device != torch.device("cpu"):
-            warnings.warn(
-                "Inference on GPU is not recommended for the autoregressive "
-                "models (the entropy coder is run sequentially on CPU)."
-            )
+            warnings.warn("Inference on GPU is not recommended for the autoregressive " "models (the entropy coder is run sequentially on CPU).")
 
         y = self.g_a(x)
         z = self.h_a(y)
@@ -522,8 +541,8 @@ class JointAutoregressiveHierarchicalPriors(MeanScaleHyperprior):
         y_strings = []
         for i in range(y.size(0)):
             string = self._compress_ar(
-                y_hat[i : i + 1],
-                params[i : i + 1],
+                y_hat[i:i + 1],
+                params[i:i + 1],
                 y_height,
                 y_width,
                 kernel_size,
@@ -547,7 +566,7 @@ class JointAutoregressiveHierarchicalPriors(MeanScaleHyperprior):
         masked_weight = self.context_prediction.weight * self.context_prediction.mask
         for h in range(height):
             for w in range(width):
-                y_crop = y_hat[:, :, h : h + kernel_size, w : w + kernel_size]
+                y_crop = y_hat[:, :, h:h + kernel_size, w:w + kernel_size]
                 ctx_p = F.conv2d(
                     y_crop,
                     masked_weight,
@@ -556,7 +575,7 @@ class JointAutoregressiveHierarchicalPriors(MeanScaleHyperprior):
 
                 # 1x1 conv for the entropy parameters prediction network, so
                 # we only keep the elements in the "center"
-                p = params[:, :, h : h + 1, w : w + 1]
+                p = params[:, :, h:h + 1, w:w + 1]
                 gaussian_params = self.entropy_parameters(torch.cat((p, ctx_p), dim=1))
                 gaussian_params = gaussian_params.squeeze(3).squeeze(2)
                 scales_hat, means_hat = gaussian_params.chunk(2, 1)
@@ -570,9 +589,7 @@ class JointAutoregressiveHierarchicalPriors(MeanScaleHyperprior):
                 symbols_list.extend(y_q.squeeze().tolist())
                 indexes_list.extend(indexes.squeeze().tolist())
 
-        encoder.encode_with_indexes(
-            symbols_list, indexes_list, cdf, cdf_lengths, offsets
-        )
+        encoder.encode_with_indexes(symbols_list, indexes_list, cdf, cdf_lengths, offsets)
 
         string = encoder.flush()
         return string
@@ -581,10 +598,7 @@ class JointAutoregressiveHierarchicalPriors(MeanScaleHyperprior):
         assert isinstance(strings, list) and len(strings) == 2
 
         if next(self.parameters()).device != torch.device("cpu"):
-            warnings.warn(
-                "Inference on GPU is not recommended for the autoregressive "
-                "models (the entropy coder is run sequentially on CPU)."
-            )
+            warnings.warn("Inference on GPU is not recommended for the autoregressive " "models (the entropy coder is run sequentially on CPU).")
 
         # FIXME: we don't respect the default entropy coder and directly call the
         # range ANS decoder
@@ -609,8 +623,8 @@ class JointAutoregressiveHierarchicalPriors(MeanScaleHyperprior):
         for i, y_string in enumerate(strings[0]):
             self._decompress_ar(
                 y_string,
-                y_hat[i : i + 1],
-                params[i : i + 1],
+                y_hat[i:i + 1],
+                params[i:i + 1],
                 y_height,
                 y_width,
                 kernel_size,
@@ -621,9 +635,7 @@ class JointAutoregressiveHierarchicalPriors(MeanScaleHyperprior):
         x_hat = self.g_s(y_hat).clamp_(0, 1)
         return {"x_hat": x_hat}
 
-    def _decompress_ar(
-        self, y_string, y_hat, params, height, width, kernel_size, padding
-    ):
+    def _decompress_ar(self, y_string, y_hat, params, height, width, kernel_size, padding):
         cdf = self.gaussian_conditional.quantized_cdf.tolist()
         cdf_lengths = self.gaussian_conditional.cdf_length.tolist()
         offsets = self.gaussian_conditional.offset.tolist()
@@ -638,7 +650,7 @@ class JointAutoregressiveHierarchicalPriors(MeanScaleHyperprior):
             for w in range(width):
                 # only perform the 5x5 convolution on a cropped tensor
                 # centered in (h, w)
-                y_crop = y_hat[:, :, h : h + kernel_size, w : w + kernel_size]
+                y_crop = y_hat[:, :, h:h + kernel_size, w:w + kernel_size]
                 ctx_p = F.conv2d(
                     y_crop,
                     self.context_prediction.weight,
@@ -646,25 +658,22 @@ class JointAutoregressiveHierarchicalPriors(MeanScaleHyperprior):
                 )
                 # 1x1 conv for the entropy parameters prediction network, so
                 # we only keep the elements in the "center"
-                p = params[:, :, h : h + 1, w : w + 1]
+                p = params[:, :, h:h + 1, w:w + 1]
                 gaussian_params = self.entropy_parameters(torch.cat((p, ctx_p), dim=1))
                 scales_hat, means_hat = gaussian_params.chunk(2, 1)
 
                 indexes = self.gaussian_conditional.build_indexes(scales_hat)
-                rv = decoder.decode_stream(
-                    indexes.squeeze().tolist(), cdf, cdf_lengths, offsets
-                )
+                rv = decoder.decode_stream(indexes.squeeze().tolist(), cdf, cdf_lengths, offsets)
                 rv = torch.Tensor(rv).reshape(1, -1, 1, 1)
                 rv = self.gaussian_conditional.dequantize(rv, means_hat)
 
                 hp = h + padding
                 wp = w + padding
-                y_hat[:, :, hp : hp + 1, wp : wp + 1] = rv
+                y_hat[:, :, hp:hp + 1, wp:wp + 1] = rv
 
 
 class RateDistortionLoss(nn.Module):
     """Custom rate distortion loss with a Lagrangian parameter."""
-
     def __init__(self, lmbda=1e-2, metrics='mse'):
         super().__init__()
         self.mse = nn.MSELoss()
@@ -676,17 +685,74 @@ class RateDistortionLoss(nn.Module):
         out = {}
         num_pixels = N * H * W
 
-        out["bpp_loss"] = sum(
-            (torch.log(likelihoods).sum() / (-math.log(2) * num_pixels))
-            for likelihoods in output["likelihoods"].values()
-        )
+        out["bpp_loss"] = sum((torch.log(likelihoods).sum() / (-math.log(2) * num_pixels)) for likelihoods in output["likelihoods"].values())
         if self.metrics == 'mse':
             out["mse_loss"] = self.mse(output["x_hat"], target)
             out["ms_ssim_loss"] = None
-            out["loss"] = self.lmbda * 255 ** 2 * out["mse_loss"] + out["bpp_loss"]
+            out["loss"] = self.lmbda * 255**2 * out["mse_loss"] + out["bpp_loss"]
         elif self.metrics == 'ms-ssim':
             out["mse_loss"] = None
             out["ms_ssim_loss"] = 1 - ms_ssim(output["x_hat"], target, data_range=1.0)
             out["loss"] = self.lmbda * out["ms_ssim_loss"] + out["bpp_loss"]
 
         return out
+
+
+cfgs = {
+    "bmshj2018-factorized": {
+        1: (128, 192),
+        2: (128, 192),
+        3: (128, 192),
+        4: (128, 192),
+        5: (128, 192),
+        6: (192, 320),
+        7: (192, 320),
+        8: (192, 320),
+    },
+    "bmshj2018-hyperprior": {
+        1: (128, 192),
+        2: (128, 192),
+        3: (128, 192),
+        4: (128, 192),
+        5: (128, 192),
+        6: (192, 320),
+        7: (192, 320),
+        8: (192, 320),
+    },
+    "mbt2018-mean": {
+        1: (128, 192),
+        2: (128, 192),
+        3: (128, 192),
+        4: (128, 192),
+        5: (192, 320),
+        6: (192, 320),
+        7: (192, 320),
+        8: (192, 320),
+    },
+    "mbt2018": {
+        1: (192, 192),
+        2: (192, 192),
+        3: (192, 192),
+        4: (192, 192),
+        5: (192, 320),
+        6: (192, 320),
+        7: (192, 320),
+        8: (192, 320),
+    },
+    "cheng2020-anchor": {
+        1: (128, ),
+        2: (128, ),
+        3: (128, ),
+        4: (192, ),
+        5: (192, ),
+        6: (192, ),
+    },
+    "cheng2020-attn": {
+        1: (128, ),
+        2: (128, ),
+        3: (128, ),
+        4: (192, ),
+        5: (192, ),
+        6: (192, ),
+    },
+}

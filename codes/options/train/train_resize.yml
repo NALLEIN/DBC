@@ -5,8 +5,10 @@ model: resize
 distortion: sr
 scale: 2
 gpu_ids: [0]
-scalea: 1
-scaleb: 2
+lamada: !!float 1e-3
+compressmodel: bmshj2018-hyperprior
+quality: 1
+metrics: mse
 
 #### datasets
 
@@ -85,5 +87,5 @@ train:
 #### logger
 
 logger:
-  print_freq: 100
+  print_freq: 1000
   save_checkpoint_freq: !!float 10000

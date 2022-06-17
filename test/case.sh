@@ -1,4 +1,4 @@
-for file in `find /media/jianghao/Samsung_T5/dataset/clic/all | grep ".*png"`
+for file in `find /home/jianghao/Dataset/Flickr2K_HR | grep ".*png"`
 do
-    echo $(basename $file) >> /home/jianghao/Code/bytedance/DBC/codes/data/meta_info/clic.txt
+    echo $(basename $file) >> /DATA/jianghao/Code/DBC/codes/data/meta_info/flicker2k.txt
 done

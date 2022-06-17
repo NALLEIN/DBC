@@ -160,8 +160,11 @@ def main():
 
             # validation
             if current_step % opt['train']['val_freq'] == 0 and rank <= 0:
+                avg_resize_param = 0.0
                 avg_psnr = 0.0
-                avg_bic_psnr = 0.0
+                avg_psnr_val = 0.0
+                avg_bpp = 0.0
+                avg_bpp_val = 0.0
                 idx = 0
                 logger_val = logging.getLogger('val')  # validation logger
                 '''model_dict = model.netG.state_dict()
@@ -202,21 +205,34 @@ def main():
                         util.save_img(valnet, save_img_path_gt)
                     # calculate PSNR
 
+                    avg_resize_param += visuals['theta']
+                    logger.info('# Validation {:s} # resize parameter: {:.4e}.'.format(img_name, visuals['theta']))
                     avg_psnr += visuals['PSNR_net']
-                    avg_bic_psnr += visuals['PSNR_fix']
+                    avg_psnr_val += visuals['PSNR_fix']
                     logger_val.info('# Validation {:s} # net PSNR: {:.4e}.'.format(img_name, visuals['PSNR_net']))
                     logger_val.info('# Validation {:s} # fix PSNR: {:.4e}.'.format(img_name, visuals['PSNR_fix']))
 
+                    avg_bpp += visuals['bpp_net']
+                    avg_bpp_val += visuals['bpp_fix']
+                    logger_val.info('# Validation {:s} # net bpp: {:.4e}.'.format(img_name, visuals['bpp_net']))
+                    logger_val.info('# Validation {:s} # fix bpp: {:.4e}.'.format(img_name, visuals['bpp_fix']))
+
+                avg_resize_param = avg_resize_param / idx
                 avg_psnr = avg_psnr / idx
-                avg_bic_psnr = avg_bic_psnr / idx
-
+                avg_psnr_val = avg_psnr_val / idx
+                avg_bpp = avg_bpp / idx
+                avg_bpp_val = avg_bpp_val / idx
                 # log
+                logger.info('# Validation # avg resize parameter: {:.4e}.'.format(avg_resize_param))
                 logger.info('# Validation # net PSNR: {:.4e}.'.format(avg_psnr))
-                logger.info('# Validation # fix PSNR: {:.4e}.'.format(avg_bic_psnr))
-
+                logger.info('# Validation # fix PSNR: {:.4e}.'.format(avg_psnr_val))
+                logger.info('# Validation # net bpp: {:.4e}.'.format(avg_bpp))
+                logger.info('# Validation # fix bpp: {:.4e}.'.format(avg_bpp_val))
+                logger_val.info('<epoch:{:3d}, iter:{:8,d}> avg resize parameter: {:.4e}.'.format(epoch, current_step, avg_resize_param))
                 logger_val.info('<epoch:{:3d}, iter:{:8,d}> net psnr: {:.4e}.'.format(epoch, current_step, avg_psnr))
-                logger_val.info('<epoch:{:3d}, iter:{:8,d}> fix psnr: {:.4e}.'.format(epoch, current_step, avg_bic_psnr))
-
+                logger_val.info('<epoch:{:3d}, iter:{:8,d}> fix psnr: {:.4e}.'.format(epoch, current_step, avg_psnr_val))
+                logger_val.info('<epoch:{:3d}, iter:{:8,d}> net bpp: {:.4e}.'.format(epoch, current_step, avg_bpp))
+                logger_val.info('<epoch:{:3d}, iter:{:8,d}> fix bpp: {:.4e}.'.format(epoch, current_step, avg_bpp_val))
                 # tensorboard logger
 
             #### save models and training states

@@ -15,7 +15,7 @@ from models.modules.loss import ReconstructionLoss
 import sys
 
 from models.modules.resize import ResizeNet
-from models.modules.google import ScaleHyperprior, RateDistortionLoss
+from models.modules.google import ScaleHyperprior, RateDistortionLoss, cfgs
 from compressai.zoo import bmshj2018_hyperprior
 
 sys.path.append("..")
@@ -24,6 +24,7 @@ val_logger = logging.getLogger('val')
 
 
 class ResizeModel(BaseModel):
+
     def __init__(self, opt):
         super(ResizeModel, self).__init__(opt)
 
@@ -35,12 +36,20 @@ class ResizeModel(BaseModel):
         test_opt = opt['test']
         self.train_opt = train_opt
         self.test_opt = test_opt
+        self.quality = opt['quality']
+        self.lamada = opt['lamada']
+        self.metrics = opt['metrics']
+        self.netAcfg = opt['compressmodel']
 
-        self.criterion = RateDistortionLoss(lmbda=1e-1, metrics='mse')
+        self.criterion = RateDistortionLoss(lmbda=self.lamada, metrics=self.metrics)
         self.netG = ResizeNet().to(self.device)
-        # self.netA = ScaleHyperprior(192, 320).to(self.device)  # 128, 192
-        self.netA = bmshj2018_hyperprior(quality=7, metric="mse", pretrained=True).to(self.device)
-        self.valnetA = bmshj2018_hyperprior(quality=7, metric="mse", pretrained=True).to(self.device)
+        self.netA = ScaleHyperprior(*cfgs[self.netAcfg][self.quality]).to(self.device)
+        load_dict = torch.load('pretrain/bmshj2018-hyperprior-%s-7eb97409.pth' % (self.quality))
+        self.netA.load_state_dict(load_dict)
+
+        self.valnetA = bmshj2018_hyperprior(quality=self.quality, metric=self.metrics, pretrained=False).to(self.device)
+        self.valnetA.load_state_dict(load_dict)
+
 
         if opt['dist']:
             self.netG = DistributedDataParallel(self.netG, device_ids=[torch.cuda.current_device()])
@@ -131,21 +140,21 @@ class ResizeModel(BaseModel):
     def optimize_parameters(self, step):
         B, C, H, W = self.real_H.size()
         lr, theta = self.netG(self.real_H)
-        out_dict = self.netA(lr)
+        out_dict = self.netA(lr, theta)
         lr_codec = out_dict['x_hat']
         hr_rec, _ = self.netG(lr_codec, theta, reverse=True)
 
         out_dict['x_hat'] = hr_rec
         loss_rd = self.criterion(out_dict, self.real_H)
         loss_rd['loss'].backward()
-        torch.nn.utils.clip_grad_norm_(self.netA.parameters(), max_norm=5)
-        torch.nn.utils.clip_grad_norm_(self.netG.parameters(), max_norm=5)
+        torch.nn.utils.clip_grad_norm_(self.netA.parameters(), max_norm=5.0)
+        torch.nn.utils.clip_grad_norm_(self.netG.parameters(), max_norm=5.0)
         self.optimizer_A.step()
         self.optimizer_G.step()
 
         aux_loss = self.netA.module.aux_loss()
         aux_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.netA.parameters(), max_norm=5)
+        torch.nn.utils.clip_grad_norm_(self.netA.parameters(), max_norm=5.0)
         self.optimizer_aux.step()
 
         # set log
@@ -158,9 +167,10 @@ class ResizeModel(BaseModel):
         self.netG.eval()
         self.netA.eval()
         self.valnetA.eval()
+        self.netA.module.update()
         with torch.no_grad():
             lr, theta = self.netG(self.real_H)
-            out_net = self.netA(lr)
+            out_net = self.netA(lr, theta)
             lr_codec = out_net['x_hat']
             hr_rec, _ = self.netG(lr_codec, theta, reverse=True)
             out_net['x_hat'] = hr_rec
@@ -169,6 +179,7 @@ class ResizeModel(BaseModel):
             val_net = self.valnetA(self.real_H)
             loss_val = self.criterion(val_net, self.real_H)
             # used for visualization
+            self.theta = theta
             self.lr = lr
             self.lr_codec = lr_codec
             self.hr_rec = hr_rec
@@ -184,8 +195,8 @@ class ResizeModel(BaseModel):
         self.netG.eval()
         self.netA.eval()
         with torch.no_grad():
-            lr, theta = self.netA(x)
-            out_net = self.netG.module.compress(lr)
+            lr, theta = self.netG(x)
+            out_net = self.netA.module.compress(lr)
         return out_net['strings'], out_net['shape'], theta
 
     @torch.no_grad()
@@ -202,6 +213,7 @@ class ResizeModel(BaseModel):
 
     def get_current_visuals(self):
         out_dict = OrderedDict()
+        out_dict['theta'] = self.theta.detach().float().cpu().numpy()[0][0]
         out_dict['lr'] = self.lr.detach().float().cpu()
         out_dict['lr_codec'] = self.lr_codec.detach().float().cpu()
         out_dict['hr_rec'] = self.hr_rec.detach().float().cpu()
