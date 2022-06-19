@@ -80,92 +80,44 @@ def BD_RATE(R1, PSNR1, R2, PSNR2, piecewise=0):
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('-path', type=str, required=True, help='path of current sequence logs.')
+parser.add_argument('-savepath', type=str, required=True, help='path of current sequence logs.')
+parser.add_argument('-path1', type=str, required=True, help='path of current sequence logs.')
+parser.add_argument('-path2', type=str, required=True, help='path of current sequence logs.')
 args = parser.parse_args()
 
-mode = ["y", "u", "v", "average"]
-ssimmode = ["Y", "U", "V", "All"]
-RateNet = []
-Ratelanczos = []
-PSNRNet = {}
-PSNRlanczos = {}
-SSIMNet = {}
-SSIMlanczos = {}
+bpp1 = []
+bpp2 = []
+psnr1 = []
+psnr2 = []
+ssim1 = []
+ssim2 = []
+f1 = open(args.path1, mode='r')
+lines1 = f1.readlines()
+for i in range(0, len(lines1), 3):
+    psnr1.append(float(lines1[i].split('\n')[0]))
+    ssim1.append(float(lines1[i + 1].split('\n')[0]))
+    bpp1.append(float(lines1[i + 2].split('\n')[0]))
 
-for m in mode:
-    PSNRNet[m] = []
-    PSNRlanczos[m] = []
-for m in ssimmode:
-    SSIMNet[m] = []
-    SSIMlanczos[m] = []
+f2 = open(args.path2, mode='r')
+lines2 = f2.readlines()
+for i in range(0, len(lines2), 3):
+    psnr2.append(float(lines2[i].split('\n')[0]))
+    ssim2.append(float(lines2[i + 1].split('\n')[0]))
+    bpp2.append(float(lines2[i + 2].split('\n')[0]))
 
-for qp in range(22, 38, 5):
-    f = open(args.path + "/Avg_psnr_net_" + str(qp), mode='r')
-    lines = f.readlines()
-    line = lines[-1]
-    for m in mode:
-        PSNRNet[m].append(float(re.search(m + ":(\d+(\.\d+))", line).group(1)))
+print('BD-PSNR: ', BD_PSNR(bpp1, psnr1, bpp2, psnr2))
+print('BD-RATE: ', BD_RATE(bpp1, psnr1, bpp2, psnr2))
 
-    f = open(args.path + "/Avg_ssim_net_" + str(qp), mode='r')
-    lines = f.readlines()
-    line = lines[-1]
-    for m in ssimmode:
-        SSIMNet[m].append(float(re.search(m + ":(\d+(\.\d+))", line).group(1)))
+plt.clf()
+oursmse, = plt.plot(bpp1, psnr1, color='lightblue', marker='o', markersize=4, label="bdbr1")
+oursmse, = plt.plot(bpp2, psnr2, color='brown', marker='o', markersize=4, label="bdbr2")
 
-    f = open(args.path + "/transcode_net_" + str(qp), mode='r')
-    lines = f.readlines()
-    # line = lines[-1]
-    # RateNet.append(float(re.search("(\d+(\.\d+)) kb", line).group(1)))
-    line = lines[-4]
-    RateNet.append(float(re.search("a\s+(\d+(\.\d+))", line).group(1)))
+font = {'family': 'serif', 'weight': 'normal', 'size': 8}
+matplotlib.rc('font', **font)
+LineWidth = 1
+plt.grid()
+plt.xlabel('bpp')
+plt.ylabel('PSNR(dB)')
+plt.legend()
+plt.savefig(args.savepath + "/" + "_PSNR.png", format='png', dpi=300, bbox_inches='tight')
 
-    f = open(args.path + "/Avg_psnr_lanczos_" + str(qp), mode='r')
-    lines = f.readlines()
-    line = lines[-1]
-    for m in mode:
-        PSNRlanczos[m].append(float(re.search(m + ":(\d+(\.\d+))", line).group(1)))
-
-    f = open(args.path + "/Avg_ssim_lanczos_" + str(qp), mode='r')
-    lines = f.readlines()
-    line = lines[-1]
-    for m in ssimmode:
-        SSIMlanczos[m].append(float(re.search(m + ":(\d+(\.\d+))", line).group(1)))
-
-    f = open(args.path + "/transcode_lanczos_" + str(qp), mode='r')
-    lines = f.readlines()
-    # line = lines[-1]
-    # Ratelanczos.append(float(re.search("(\d+(\.\d+)) kb", line).group(1)))
-    line = lines[-4]
-    Ratelanczos.append(float(re.search("a\s+(\d+(\.\d+))", line).group(1)))
-
-print("Test on " + args.path)
-for m in mode:
-    print("Evaluation on " + m)
-    print('BD-PSNR: ', BD_PSNR(Ratelanczos, PSNRlanczos[m], RateNet, PSNRNet[m]))
-    print('BD-RATE: ', BD_RATE(Ratelanczos, PSNRlanczos[m], RateNet, PSNRNet[m]))
-
-    plt.clf()
-    oursmse, = plt.plot(RateNet, PSNRNet[m], color='lightblue', marker='o', markersize=4, label="net")
-    oursmse, = plt.plot(Ratelanczos, PSNRlanczos[m], color='brown', marker='o', markersize=4, label="lanczos")
-
-    font = {'family': 'serif', 'weight': 'normal', 'size': 8}
-    matplotlib.rc('font', **font)
-    LineWidth = 1
-    plt.grid()
-    plt.xlabel('bpp')
-    plt.ylabel('PSNR(dB)')
-    plt.legend()
-    plt.savefig(args.path + "/" + m + "_PSNR.png", format='png', dpi=300, bbox_inches='tight')
-for m in ssimmode:
-    plt.clf()
-    oursmse, = plt.plot(RateNet, SSIMNet[m], color='lightblue', marker='o', markersize=4, label="net")
-    oursmse, = plt.plot(Ratelanczos, SSIMlanczos[m], color='brown', marker='o', markersize=4, label="lanczos")
-
-    font = {'family': 'serif', 'weight': 'normal', 'size': 8}
-    matplotlib.rc('font', **font)
-    LineWidth = 1
-    plt.grid()
-    plt.xlabel('bpp')
-    plt.ylabel('SSIM')
-    plt.legend()
-    plt.savefig(args.path + "/" + m + "_SSIM.png", format='png', dpi=300, bbox_inches='tight')

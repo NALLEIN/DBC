@@ -3,40 +3,37 @@ import logging
 import time
 import argparse
 from collections import OrderedDict
+from bitarray import test
 import cv2
 import numpy as np
 import options.options as option
 import utils.util as util
-from data.util import bgr2ycbcr
 from data import create_dataset, create_dataloader
 from models import create_model
 
 #### options
 parser = argparse.ArgumentParser()
-parser.add_argument('-opt', type=str, default='/home/jianghao/Code/Graduation/4k1/codes/options/test/test_EDSR.yml', help='Path to options YMAL file.')
+parser.add_argument('-opt', type=str, required=True, help='Path to options YMAL file.')
 opt = option.parse(parser.parse_args().opt, is_train=False)
 opt = option.dict_to_nonedict(opt)
 
-util.mkdirs(
-    (path for key, path in opt['path'].items()
-     if not key == 'experiments_root' and 'pretrain_model' not in key and 'resume' not in key))
-util.setup_logger('base', opt['path']['log'], 'test_' + opt['name'], level=logging.INFO,
-                  screen=True, tofile=False)
+util.mkdirs((path for key, path in opt['path'].items() if not key == 'experiments_root' and 'pretrain_model' not in key and 'resume' not in key))
+util.setup_logger('base', opt['path']['log'], 'test_' + opt['name'], level=logging.INFO, screen=True, tofile=False)
 logger = logging.getLogger('base')
-logger.info(option.dict2str(opt))
-
+# logger.info(option.dict2str(opt))
+logger.info('PSNR; SSIM; BPP; VALPSNR; VALSSIM; VALBPP')
 #### Create test dataset and dataloader
 test_loaders = []
 for phase, dataset_opt in sorted(opt['datasets'].items()):
     test_set = create_dataset(dataset_opt)
     test_loader = create_dataloader(test_set, dataset_opt)
-    logger.info('Number of test images in [{:s}]: {:d}'.format(dataset_opt['name'], len(test_set)))
+    # logger.info('Number of test images in [{:s}]: {:d}'.format(dataset_opt['name'], len(test_set)))
     test_loaders.append(test_loader)
 
 model = create_model(opt)
 for test_loader in test_loaders:
     test_set_name = test_loader.dataset.opt['name']
-    logger.info('\nTesting [{:s}]...'.format(test_set_name))
+    # logger.info('\nTesting [{:s}]...'.format(test_set_name))
     test_start_time = time.time()
     dataset_dir = osp.join(opt['path']['results_root'], test_set_name)
     util.mkdir(dataset_dir)
@@ -44,13 +41,10 @@ for test_loader in test_loaders:
     test_results = OrderedDict()
     test_results['psnr'] = []
     test_results['ssim'] = []
-    test_results['psnr_y'] = []
-    test_results['ssim_y'] = []
-
-    test_results['psnr_lr'] = []
-    test_results['ssim_lr'] = []
-    test_results['psnr_y_lr'] = []
-    test_results['ssim_y_lr'] = []
+    test_results['psnr_val'] = []
+    test_results['ssim_val'] = []
+    test_results['bpp_net'] = []
+    test_results['bpp_val'] = []
 
     for data in test_loader:
         model.feed_data(data)
@@ -60,121 +54,52 @@ for test_loader in test_loaders:
         model.test()
         visuals = model.get_current_visuals()
 
-        sr_img = util.tensor2img(visuals['SR'])  # uint8
-        srgt_img = util.tensor2img(visuals['GT'])  # uint8
-        lr_img = util.tensor2img(visuals['LR'])  # uint8
-        lrgt_img = util.tensor2img(visuals['LR_ref'])  # uint8
+        hr_rec = util.tensor2img(visuals['hr_rec'])  # uint8
+        val_img = util.tensor2img(visuals['valnet'])  # uint8
+        gt_img = util.tensor2img(visuals['gt'])
+        test_results['bpp_net'].append(visuals['bpp_net'])
+        test_results['bpp_val'].append(visuals['bpp_fix'])
+        test_results['psnr'].append(visuals['PSNR_net'])
+        test_results['psnr_val'].append(visuals['PSNR_fix'])
 
         # save images
-        suffix = opt['suffix']
-        if suffix:
-            save_img_path = osp.join(dataset_dir, img_name + suffix + '.png')
-        else:
-            save_img_path = osp.join(dataset_dir, img_name + '.png')
-        util.save_img(sr_img, save_img_path)
-
-        if suffix:
-            save_img_path = osp.join(dataset_dir, img_name + suffix + '_GT.png')
-        else:
-            save_img_path = osp.join(dataset_dir, img_name + '_GT.png')
-        util.save_img(srgt_img, save_img_path)
-
-        if suffix:
-            save_img_path = osp.join(dataset_dir, img_name + suffix + '_LR.png')
-        else:
-            save_img_path = osp.join(dataset_dir, img_name + '_LR.png')
-        util.save_img(lr_img, save_img_path)
-
-        if suffix:
-            save_img_path = osp.join(dataset_dir, img_name + suffix + '_LR_ref.png')
-        else:
-            save_img_path = osp.join(dataset_dir, img_name + '_LR_ref.png')
-        util.save_img(lrgt_img, save_img_path)
-
-        '''if suffix:
-            save_img_path = osp.join(dataset_dir, img_name + suffix + '.jpg')
-        else:
-            save_img_path = osp.join(dataset_dir, img_name + '.jpg')
-        cv2.imwrite(save_img_path, srgt_img,[int(cv2.IMWRITE_JPEG_QUALITY), 10])
-
-        if suffix:
-            save_img_path = osp.join(dataset_dir, img_name + suffix + '_LR.jpg')
-        else:
-            save_img_path = osp.join(dataset_dir, img_name + '_LR.jpg')
-        cv2.imwrite(save_img_path, lrgt_img,[int(cv2.IMWRITE_JPEG_QUALITY), 50])'''
-
+        save_img_path = osp.join(dataset_dir, img_name + '_GT.png')
+        util.save_img(gt_img, save_img_path)
+        save_img_path = osp.join(dataset_dir, img_name + '_rec.png')
+        util.save_img(hr_rec, save_img_path)
+        save_img_path = osp.join(dataset_dir, img_name + '_val.png')
+        util.save_img(val_img, save_img_path)
 
         # calculate PSNR and SSIM
-        gt_img = util.tensor2img(visuals['GT'])
-
-        gt_img = gt_img
-        sr_img = sr_img
-
-        lr_img = lr_img
-        lrgt_img = lrgt_img
-
-        crop_border = opt['scale']
-        if crop_border == 0:
-            cropped_sr_img = sr_img
-            cropped_gt_img = gt_img
-        else:
-            cropped_sr_img = sr_img[crop_border:-crop_border, crop_border:-crop_border]
-            cropped_gt_img = gt_img[crop_border:-crop_border, crop_border:-crop_border]
-
-        psnr = util.calculate_psnr(cropped_sr_img, cropped_gt_img)
-        ssim = util.calculate_ssim(cropped_sr_img, cropped_gt_img)
-        test_results['psnr'].append(psnr)
+        ssim = util.calculate_ssim(gt_img, hr_rec)
         test_results['ssim'].append(ssim)
+        ssim_val = util.calculate_ssim(gt_img, val_img)
+        test_results['ssim_val'].append(ssim_val)
+        logger.info('{:10s}'.format(img_name))
+        logger.info('{:.6f};{:.6f};{:.6f};{:.6f};{:.6f};{:.6f}.'.format(visuals['PSNR_net'], ssim, visuals['bpp_net'], visuals['PSNR_fix'],
+                                                                        ssim_val, visuals['bpp_fix']))
 
-        # PSNR and SSIM for LR
-        psnr_lr = util.calculate_psnr(lr_img, lrgt_img)
-        ssim_lr = util.calculate_ssim(lr_img, lrgt_img)
-        test_results['psnr_lr'].append(psnr_lr)
-        test_results['ssim_lr'].append(ssim_lr)
-
-        if gt_img.ndim == 3:  # RGB image
-            sr_img_y = bgr2ycbcr(sr_img, only_y=True)
-            gt_img_y = bgr2ycbcr(gt_img, only_y=True)
-            if crop_border == 0:
-                cropped_sr_img_y = sr_img_y
-                cropped_gt_img_y = gt_img_y
-            else:
-                cropped_sr_img_y = sr_img_y[crop_border:-crop_border, crop_border:-crop_border]
-                cropped_gt_img_y = gt_img_y[crop_border:-crop_border, crop_border:-crop_border]
-            psnr_y = util.calculate_psnr(cropped_sr_img_y, cropped_gt_img_y)
-            ssim_y = util.calculate_ssim(cropped_sr_img_y, cropped_gt_img_y)
-            test_results['psnr_y'].append(psnr_y)
-            test_results['ssim_y'].append(ssim_y)
-
-            lr_img_y = bgr2ycbcr(lr_img, only_y=True)
-            lrgt_img_y = bgr2ycbcr(lrgt_img, only_y=True)
-            psnr_y_lr = util.calculate_psnr(lr_img_y, lrgt_img_y)
-            ssim_y_lr = util.calculate_ssim(lr_img_y, lrgt_img_y)
-            test_results['psnr_y_lr'].append(psnr_y_lr)
-            test_results['ssim_y_lr'].append(ssim_y_lr)
-
-            logger.info(
-                    '{:20s} - PSNR: {:.6f} dB; SSIM: {:.6f}; PSNR_Y: {:.6f} dB; SSIM_Y: {:.6f}. LR PSNR: {:.6f} dB; SSIM: {:.6f}; PSNR_Y: {:.6f} dB; SSIM_Y: {:.6f}.'.
-                format(img_name, psnr, ssim, psnr_y, ssim_y, psnr_lr, ssim_lr, psnr_y_lr, ssim_y_lr))
-        #else:
-            #logger.info('{:20s} - PSNR: {:.6f} dB; SSIM: {:.6f}. LR PSNR: {:.6f} dB; SSIM: {:.6f}.'.format(img_name, psnr, ssim, psnr_lr, ssim_lr))
+        # print(visuals['PSNR_fix'])
+        # print(ssim_val)
+        # print(visuals['bpp_fix'])
 
     # Average PSNR/SSIM results
     ave_psnr = sum(test_results['psnr']) / len(test_results['psnr'])
     ave_ssim = sum(test_results['ssim']) / len(test_results['ssim'])
 
-    ave_psnr_lr = sum(test_results['psnr_lr']) / len(test_results['psnr_lr'])
-    ave_ssim_lr = sum(test_results['ssim_lr']) / len(test_results['ssim_lr'])
+    ave_psnr_val = sum(test_results['psnr_val']) / len(test_results['psnr_val'])
+    ave_ssim_val = sum(test_results['ssim_val']) / len(test_results['ssim_val'])
+
+    avg_bpp = sum(test_results['bpp_net']) / len(test_results['bpp_net'])
+    avg_bpp_val = sum(test_results['bpp_val']) / len(test_results['bpp_val'])
 
     logger.info(
-            '----Average PSNR/SSIM results for {}----\n\tpsnr: {:.6f} db; ssim: {:.6f}. LR psnr: {:.6f} db; ssim: {:.6f}.\n'.format(
-            test_set_name, ave_psnr, ave_ssim, ave_psnr_lr, ave_ssim_lr))
-    if test_results['psnr_y'] and test_results['ssim_y']:
-        ave_psnr_y = sum(test_results['psnr_y']) / len(test_results['psnr_y'])
-        ave_ssim_y = sum(test_results['ssim_y']) / len(test_results['ssim_y'])
+        '----Average PSNR/SSIM results for {}----\n\tpsnr: {:.6f} db; ssim: {:.6f}. psnr_val: {:.6f} db; ssim_val: {:.6f}; bpp: {:.3f}; bpp_val: {:.3f}..\n'
+        .format(test_set_name, ave_psnr, ave_ssim, ave_psnr_val, ave_ssim_val, avg_bpp, avg_bpp_val))
 
-        ave_psnr_y_lr = sum(test_results['psnr_y_lr']) / len(test_results['psnr_y_lr'])
-        ave_ssim_y_lr = sum(test_results['ssim_y_lr']) / len(test_results['ssim_y_lr'])
-        logger.info(
-            '----Y channel, average PSNR/SSIM----\n\tPSNR_Y: {:.6f} dB; SSIM_Y: {:.6f}. LR PSNR_Y: {:.6f} dB; SSIM_Y: {:.6f}.\n'.
-            format(ave_psnr_y, ave_ssim_y, ave_psnr_y_lr, ave_ssim_y_lr))
+    # print(test_results['psnr'])
+    # print(test_results['ssim'])
+    # print(test_results['bpp_net'])
+    print(ave_psnr_val)
+    print(ave_ssim_val)
+    print(avg_bpp_val)
