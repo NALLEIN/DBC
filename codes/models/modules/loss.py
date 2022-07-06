@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import math
+from pytorch_msssim import ms_ssim
 
 class ReconstructionLoss(nn.Module):
     def __init__(self, losstype='l2', eps=1e-6):
@@ -68,29 +70,59 @@ class GradientPenaltyLoss(nn.Module):
 
     def forward(self, interp, interp_crit):
         grad_outputs = self.get_grad_outputs(interp_crit)
-        grad_interp = torch.autograd.grad(outputs=interp_crit, inputs=interp,
-                                          grad_outputs=grad_outputs, create_graph=True,
-                                          retain_graph=True, only_inputs=True)[0]
+        grad_interp = torch.autograd.grad(outputs=interp_crit,
+                                          inputs=interp,
+                                          grad_outputs=grad_outputs,
+                                          create_graph=True,
+                                          retain_graph=True,
+                                          only_inputs=True)[0]
         grad_interp = grad_interp.view(grad_interp.size(0), -1)
         grad_interp_norm = grad_interp.norm(2, dim=1)
 
         loss = ((grad_interp_norm - 1)**2).mean()
         return loss
 
+
 class TVLoss(nn.Module):
-    def __init__(self,TVLoss_weight=1):
-        super(TVLoss,self).__init__()
+    def __init__(self, TVLoss_weight=1):
+        super(TVLoss, self).__init__()
         self.TVLoss_weight = TVLoss_weight
 
-    def forward(self,x):
+    def forward(self, x):
         batch_size = x.size()[0]
         h_x = x.size()[2]
         w_x = x.size()[3]
-        count_h = self._tensor_size(x[:,:,1:,:])
-        count_w = self._tensor_size(x[:,:,:,1:])
-        h_tv = torch.pow((x[:,:,1:,:]-x[:,:,:h_x-1,:]),2).sum()
-        w_tv = torch.pow((x[:,:,:,1:]-x[:,:,:,:w_x-1]),2).sum()
-        return self.TVLoss_weight*2*(h_tv/count_h+w_tv/count_w)/batch_size
+        count_h = self._tensor_size(x[:, :, 1:, :])
+        count_w = self._tensor_size(x[:, :, :, 1:])
+        h_tv = torch.pow((x[:, :, 1:, :] - x[:, :, :h_x - 1, :]), 2).sum()
+        w_tv = torch.pow((x[:, :, :, 1:] - x[:, :, :, :w_x - 1]), 2).sum()
+        return self.TVLoss_weight * 2 * (h_tv / count_h + w_tv / count_w) / batch_size
 
-    def _tensor_size(self,t):
-        return t.size()[1]*t.size()[2]*t.size()[3]
+    def _tensor_size(self, t):
+        return t.size()[1] * t.size()[2] * t.size()[3]
+
+
+class RateDistortionLoss(nn.Module):
+    """Custom rate distortion loss with a Lagrangian parameter."""
+    def __init__(self, lmbda=1e-2, metrics='mse'):
+        super().__init__()
+        self.mse = nn.MSELoss()
+        self.lmbda = lmbda
+        self.metrics = metrics
+
+    def forward(self, output, target):
+        N, _, H, W = target.size()
+        out = {}
+        num_pixels = N * H * W
+
+        out["bpp_loss"] = sum((torch.log(likelihoods).sum() / (-math.log(2) * num_pixels)) for likelihoods in output["likelihoods"].values())
+        if self.metrics == 'mse':
+            out["mse_loss"] = self.mse(output["x_hat"], target)
+            out["ms_ssim_loss"] = None
+            out["loss"] = self.lmbda * 255**2 * out["mse_loss"] + out["bpp_loss"]
+        elif self.metrics == 'ms-ssim':
+            out["mse_loss"] = None
+            out["ms_ssim_loss"] = 1 - ms_ssim(output["x_hat"], target, data_range=1.0)
+            out["loss"] = self.lmbda * out["ms_ssim_loss"] + out["bpp_loss"]
+
+        return out

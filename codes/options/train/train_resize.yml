@@ -1,12 +1,10 @@
 #### general settings
-name: resize_net
+name: resize_net_debug
 use_tb_logger: true
 model: resize
 distortion: sr
 scale: 2
 gpu_ids: [0]
-scalea: 1
-scaleb: 2
 
 #### datasets
 
@@ -14,8 +12,8 @@ datasets:
   train:
     name: GT
     mode: GT
-    dataroot_GT: /DATA/jianghao/Dataset/all # path to training HR images
-    meta_info_file: codes/data/meta_info/clic.txt
+    dataroot_GT: /media/jianghao/Elements/datasets/DIV2K/DIV2K_train_HR # path to training HR images
+    meta_info_file: codes/data/meta_info/DIV2K_trainHR.txt
     num_frame: 1
     n_workers: 8 # per GPU
     batch_size: 8
@@ -26,8 +24,8 @@ datasets:
   val:
     name: GT
     mode: GT
-    dataroot_GT: /DATA/jianghao/Dataset/kodak # path to validation HR images
-    meta_info_file: codes/data/meta_info/kodak.txt
+    dataroot_GT: /media/jianghao/Elements/datasets/DIV2K/DIV2K_valid_HR # path to validation HR images
+    meta_info_file: codes/data/meta_info/DIV2K_validHR.txt
     num_frame: 1
     batch_size: 1
     crop_border: 0
@@ -52,6 +50,7 @@ path:
 #### training settings: learning rate scheme, loss
 
 train:
+  qp: "22"
   lr_G: !!float 1e-4
   lr_A: !!float 1e-4
   beta1: 0.9
@@ -82,6 +81,8 @@ train:
   gradient_clipping: 5
   gaussian_scale: 1
 
+test:
+  qp: "22"
 #### logger
 
 logger:

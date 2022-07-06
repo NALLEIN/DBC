@@ -11,12 +11,13 @@ import torch.nn.functional as F
 import models.lr_scheduler as lr_scheduler
 from .base_model import BaseModel
 from models.modules.loss import ReconstructionLoss
+from models.modules.quantization import DecodeEncode, DownSample, UpSample, rgb2yuv420, yuv4202rgb, rgb2yuv420_down, rgbdown
+
 # import data.util as util
 import sys
 
-from models.modules.resize import ResizeNet
-from models.modules.google import ScaleHyperprior, RateDistortionLoss
-from compressai.zoo import bmshj2018_hyperprior
+from models.modules.resize_arch import resize_arch, VCN
+from models.modules.loss import RateDistortionLoss
 
 sys.path.append("..")
 logger = logging.getLogger('base')
@@ -35,17 +36,16 @@ class ResizeModel(BaseModel):
         test_opt = opt['test']
         self.train_opt = train_opt
         self.test_opt = test_opt
+        self.scale = opt['scale']
 
-        self.criterion = RateDistortionLoss(lmbda=1e-1, metrics='mse')
-        self.netG = ResizeNet().to(self.device)
-        # self.netA = ScaleHyperprior(192, 320).to(self.device)  # 128, 192
-        self.netA = bmshj2018_hyperprior(quality=7, metric="mse", pretrained=True).to(self.device)
-        self.valnetA = bmshj2018_hyperprior(quality=7, metric="mse", pretrained=True).to(self.device)
+        # self.criterion = RateDistortionLoss(lmbda=self.lamada, metrics=self.metrics)
+        self.netG = resize_arch(self.scale).to(self.device)
+        self.netA = VCN().to(self.device)
+        self.DecodeEncode = DecodeEncode()
 
         if opt['dist']:
             self.netG = DistributedDataParallel(self.netG, device_ids=[torch.cuda.current_device()])
             self.netA = DistributedDataParallel(self.netA, device_ids=[torch.cuda.current_device()])
-
         else:
             self.netG = DataParallel(self.netG)
             self.netA = DataParallel(self.netA)
@@ -75,12 +75,12 @@ class ResizeModel(BaseModel):
             self.optimizers.append(self.optimizer_G)
 
             wd_G = train_opt['weight_decay_G'] if train_opt['weight_decay_G'] else 0
-            optim_aux = []
+            optim_params = []
             optim_rates = []
             for k, v in self.netA.named_parameters():
                 if v.requires_grad:
-                    if k.endswith(".quantiles"):
-                        optim_aux.append(v)
+                    if ('rate' not in k):
+                        optim_params.append(v)
                     else:
                         optim_rates.append(v)
                 else:
@@ -88,8 +88,8 @@ class ResizeModel(BaseModel):
                         logger.warning('Params [{:s}] will not optimize.'.format(k))
             self.optimizer_A = torch.optim.Adam(optim_params, lr=train_opt['lr_G'], weight_decay=wd_G, betas=(train_opt['beta1'], train_opt['beta2']))
             self.optimizers.append(self.optimizer_A)
-            self.optimizer_aux = torch.optim.Adam(optim_aux, lr=train_opt['lr_G'], weight_decay=wd_G, betas=(train_opt['beta1'], train_opt['beta2']))
-            self.optimizers.append(self.optimizer_aux)
+            self.optimizer_C = torch.optim.Adam(optim_rates, lr=train_opt['lr_G'], weight_decay=wd_G, betas=(train_opt['beta1'], train_opt['beta2']))
+            self.optimizers.append(self.optimizer_C)
 
             # schedulers
             if train_opt['lr_scheme'] == 'MultiStepLR':
@@ -117,100 +117,143 @@ class ResizeModel(BaseModel):
     def feed_data(self, data):
         self.real_H = data['GT'].to(self.device)  # GT
 
-    # def gaussian_batch(self, dims):
-    #     return torch.randn(tuple(dims)).to(self.device)
+    def gaussian_batch(self, dims):
+        return torch.randn(tuple(dims)).to(self.device)
 
-    # def loss_forward(self, out, y):
-    #     l_forw_fit = self.train_opt['lambda_fit_forw'] * self.Reconstruction_forw(out, y)
-    #     return l_forw_fit
+    def loss_forward(self, out, y):
+        l_forw_fit = self.train_opt['lambda_fit_forw'] * self.Reconstruction_forw(out, y)
+        return l_forw_fit
 
-    # def loss_backward(self, out, y):
-    #     l_forw_fit = self.train_opt['lambda_rec_back'] * self.Reconstruction_back(out, y)
-    #     return l_forw_fit
+    def loss_backward(self, out, y):
+        l_back_rec = self.train_opt['lambda_rec_back'] * self.Reconstruction_back(out, y)
+        return l_back_rec
+
+    def yuvUpsample(self, x, h, w):
+        y_tensor = torch.nn.functional.pixel_unshuffle(
+            F.interpolate(torch.nn.functional.pixel_shuffle(x[:, :4, :, :], 2), size=[2 * h, 2 * w], mode='bicubic'), 2)
+        uv_tensor = F.interpolate(x[:, 4:, :, :], size=[h, w], mode='bicubic')
+        sr = torch.cat((y_tensor, uv_tensor), 1)
+        return sr
 
     def optimize_parameters(self, step):
-        B, C, H, W = self.real_H.size()
-        lr, theta = self.netG(self.real_H)
-        out_dict = self.netA(lr)
-        lr_codec = out_dict['x_hat']
-        hr_rec, _ = self.netG(lr_codec, theta, reverse=True)
+        # B, C, H, W = self.real_H.size()
+        # lr, theta = self.netG(self.real_H)
+        # out_dict = self.netA(lr)
+        # lr_codec = out_dict['x_hat']
+        # hr_rec, _ = self.netG(lr_codec, theta, reverse=True)
 
-        out_dict['x_hat'] = hr_rec
-        loss_rd = self.criterion(out_dict, self.real_H)
-        loss_rd['loss'].backward()
-        torch.nn.utils.clip_grad_norm_(self.netA.parameters(), max_norm=5)
-        torch.nn.utils.clip_grad_norm_(self.netG.parameters(), max_norm=5)
+        # out_dict['x_hat'] = hr_rec
+        # loss_rd = self.criterion(out_dict, self.real_H)
+        # loss_rd['loss'].backward()
+        # torch.nn.utils.clip_grad_norm_(self.netA.parameters(), max_norm=5)
+        # torch.nn.utils.clip_grad_norm_(self.netG.parameters(), max_norm=5)
+        # self.optimizer_A.step()
+        # self.optimizer_G.step()
+
+        # aux_loss = self.netA.module.aux_loss()
+        # aux_loss.backward()
+        # torch.nn.utils.clip_grad_norm_(self.netA.parameters(), max_norm=5)
+        # self.optimizer_aux.step()
+
+        # # set log
+        # self.log_dict['distortion'] = loss_rd['bpp_loss'].item()
+        # self.log_dict['rate'] = loss_rd['mse_loss'].item()
+        # self.log_dict['rdloss'] = loss_rd['loss'].item()
+        # qp = "37"
+
+        # YUV train
+        qp = self.train_opt['qp']
+        self.real_H, self.ref_L = rgb2yuv420_down(self.real_H, 1 / self.scale)
+        _, _, h, w = self.real_H.size()
+        out_mv = None
+
+        lr = self.ref_L
+        lr_codec, out_mv = self.DecodeEncode(lr, qp, False)
+        self.optimizer_A.zero_grad()
+        lr_est, bpp = self.netA(x=lr)
+        l_codec_fit = self.loss_forward(lr_est, lr_codec.clone().detach())
+
+        rd_loss = l_codec_fit  # 0.05 * 255**2 * l_codec_fit + bpp  #  - 1e-5 * correlation_param
+        rd_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.netA.parameters(), 5.0)
         self.optimizer_A.step()
-        self.optimizer_G.step()
 
-        aux_loss = self.netA.module.aux_loss()
-        aux_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.netA.parameters(), max_norm=5)
-        self.optimizer_aux.step()
+        # aux_loss = self.netA.module.aux_loss()
+        # aux_loss.backward()
+        # torch.nn.utils.clip_grad_norm_(self.netA.parameters(), 1.0)
+        # self.optimizer_C.step()
+
+        self.optimizer_G.zero_grad()
+        self.optimizer_C.zero_grad()
+        lr = self.netG(x=self.real_H, up=False)  # forward downscaling
+        lr_codec_est, bpp = self.netA(x=lr)
+        # sr_est = self.yuvUpsample(lr_codec_est, h, w)
+        # sr_est_codec = self.yuvUpsample(lr_codec, h, w)
+        sr_est = self.netG(lr_codec_est, up=True)
+        sr_est_codec = self.netG(lr_codec, up=True)
+
+        l_size_fit = torch.mean(bpp)
+        l_back_fit = self.loss_forward(sr_est, self.real_H) + self.loss_forward(sr_est_codec, self.real_H)
+        l_forw_fit = self.loss_forward(lr, self.ref_L)
+
+        loss = l_back_fit + 0.1 * l_forw_fit + 3e-4 * l_size_fit
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.netG.parameters(), 5.0)
+        self.optimizer_G.step()
+        self.optimizer_C.step()
 
         # set log
-        self.log_dict['distortion'] = loss_rd['bpp_loss'].item()
-        self.log_dict['rate'] = loss_rd['mse_loss'].item()
-        self.log_dict['rdloss'] = loss_rd['loss'].item()
+        self.log_dict['l_codec'] = l_codec_fit.item()
+        self.log_dict['l_forw'] = l_forw_fit.item()
+        self.log_dict['l_back'] = l_back_fit.item()
+        self.log_dict['distortion'] = (l_back_fit + l_forw_fit).item()
+        self.log_dict['l_size'] = l_size_fit.item()
 
     @torch.no_grad()
     def test(self):
         self.netG.eval()
-        self.netA.eval()
-        self.valnetA.eval()
         with torch.no_grad():
-            lr, theta = self.netG(self.real_H)
-            out_net = self.netA(lr)
-            lr_codec = out_net['x_hat']
-            hr_rec, _ = self.netG(lr_codec, theta, reverse=True)
-            out_net['x_hat'] = hr_rec
-            loss_rd = self.criterion(out_net, self.real_H)
+            qp = self.test_opt['qp']
+            real_H, ref_L = rgb2yuv420_down(self.real_H, 1 / self.scale)
+            self.ref_L = yuv4202rgb(ref_L)
+            _, _, h, w = real_H.size()
+            ref_L, _ = self.DecodeEncode(ref_L, qp, True)
+            fake_H_bic = self.yuvUpsample(ref_L, h, w)
+            self.fake_H_bic = yuv4202rgb(fake_H_bic)
+            self.psnr_fix = 10 * torch.log10(1**2 / torch.mean((real_H - fake_H_bic)**2))
 
-            val_net = self.valnetA(self.real_H)
-            loss_val = self.criterion(val_net, self.real_H)
-            # used for visualization
-            self.lr = lr
-            self.lr_codec = lr_codec
-            self.hr_rec = hr_rec
-            self.gt = self.real_H
-            self.valrec = val_net['x_hat']
-            self.bpp_fix = loss_val['bpp_loss']
-            self.bpp_net = loss_rd['bpp_loss']
-            self.psnr_fix = 10 * torch.log10(1**2 / torch.mean((self.real_H - val_net['x_hat'])**2))
-            self.psnr_net = 10 * torch.log10(1**2 / torch.mean((self.real_H - hr_rec)**2))
+            lr = self.netG(x=real_H, up=False)  # forward downscaling
+            self.forw_L = yuv4202rgb(lr)
+            lr, _ = self.DecodeEncode(lr, qp, True)
+            # fake_H = self.yuvUpsample(lr, h, w)
+            fake_H = self.netG(x=lr, up=True)
+            self.fake_H = yuv4202rgb(fake_H)
+            self.psnr = 10 * torch.log10(1**2 / torch.mean((real_H - fake_H)**2))
 
-    @torch.no_grad()
-    def compress(self, x):
+    def downscale(self, HR_img):
         self.netG.eval()
-        self.netA.eval()
         with torch.no_grad():
-            lr, theta = self.netA(x)
-            out_net = self.netG.module.compress(lr)
-        return out_net['strings'], out_net['shape'], theta
+            LR_img = self.netG(x=HR_img, up=False)
+        return LR_img
 
-    @torch.no_grad()
-    def decompress(self, strings, shape, theta):
+    def upscale(self, LR_img):
         self.netG.eval()
-        self.netA.eval()
         with torch.no_grad():
-            lr_rec = self.netA.module.decompress(strings, shape)
-            hr_rec = self.netG(lr_rec, theta, reverse=True)
-        return hr_rec
+            HR_img = self.netG(x=LR_img, up=True)
+        return HR_img
 
     def get_current_log(self):
         return self.log_dict
 
     def get_current_visuals(self):
         out_dict = OrderedDict()
-        out_dict['lr'] = self.lr.detach().float().cpu()
-        out_dict['lr_codec'] = self.lr_codec.detach().float().cpu()
-        out_dict['hr_rec'] = self.hr_rec.detach().float().cpu()
-        out_dict['gt'] = self.real_H.detach().float().cpu()
-        out_dict['valnet'] = self.valrec.detach().float().cpu()
-        out_dict['bpp_net'] = self.bpp_net.detach().item()
-        out_dict['bpp_fix'] = self.bpp_fix.detach().item()
-        out_dict['PSNR_net'] = self.psnr_net.detach().item()
+        out_dict['LR_ref'] = self.ref_L.detach()[0].float().cpu()
+        out_dict['SR'] = self.fake_H.detach()[0].float().cpu()
+        out_dict['LR'] = self.forw_L.detach()[0].float().cpu()
+        out_dict['GT'] = self.real_H.detach()[0].float().cpu()
+        out_dict['SR_bic'] = self.fake_H_bic.detach()[0].float().cpu()
         out_dict['PSNR_fix'] = self.psnr_fix.detach().item()
+        out_dict['PSNR'] = self.psnr.detach().item()
 
         return out_dict
 

@@ -44,11 +44,11 @@ class GTDataset(data.Dataset):
         img_GT = img_GT[:, :, [2, 1, 0]]
         if crop_border is None:
             img_GT = util.random_crop(img_GT, 256, 256)
-        # else:
-        #     h, w, _ = img_GT.shape
-        #     h = h // 8 * 8
-        #     w = w // 8 * 8
-        #     img_GT = img_GT[:h, :w, :]
+        else:
+            h, w, _ = img_GT.shape
+            h = h // 16 * 16
+            w = w // 16 * 16
+            img_GT = img_GT[:h, :w, :]
         img_list_GT.append(img_GT)
         if crop_border is None:
             img_list_GT = util.augment(img_list_GT)

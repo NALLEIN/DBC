@@ -6,7 +6,7 @@ def create_model(opt, model=None):
     model = opt['model']
 
     if model == 'resize':
-        from .resize_net import ResizeModel as M
+        from .DBC_DIV2K import ResizeModel as M
     else:
         raise NotImplementedError('Model [{:s}] not recognized.'.format(model))
     m = M(opt)
