@@ -158,6 +158,8 @@ def main():
             if current_step % opt['train']['val_freq'] == 0 and rank <= 0:
                 avg_psnr = 0.0
                 avg_bic_psnr = 0.0
+                avg_ssim = 0.0
+                avg_bic_ssim = 0.0
                 idx = 0
                 logger_val = logging.getLogger('val')  # validation logger
                 '''model_dict = model.netG.state_dict()
@@ -174,7 +176,7 @@ def main():
                     model.test()
                     visuals = model.get_current_visuals()
 
-                    if current_step % (opt['train']['val_freq'] * 10) == 0:
+                    if current_step % opt['train']['val_freq'] == 0:
                         sr_img = util.tensor2img(visuals['SR'])  # uint8
                         lr_img = util.tensor2img(visuals['LR'])
 
@@ -213,16 +215,26 @@ def main():
                     avg_bic_psnr += visuals['PSNR_fix']
                     logger_val.info('# Validation # PSNR: {:.4e}.'.format(visuals['PSNR']))
                     logger_val.info('# Validation # fix PSNR: {:.4e}.'.format(visuals['PSNR_fix']))
+                    avg_ssim += visuals['SSIM']
+                    avg_bic_ssim += visuals['SSIM_fix']
+                    logger_val.info('# Validation # SSIM: {:.4e}.'.format(visuals['SSIM']))
+                    logger_val.info('# Validation # fix SSIM: {:.4e}.'.format(visuals['SSIM_fix']))
 
                 avg_psnr = avg_psnr / idx
                 avg_bic_psnr = avg_bic_psnr / idx
 
+                avg_ssim = avg_ssim / idx
+                avg_bic_ssim = avg_bic_ssim / idx
+
                 # log
                 logger.info('# Validation # PSNR: {:.4e}.'.format(avg_psnr))
                 logger.info('# Validation # fix PSNR: {:.4e}.'.format(avg_bic_psnr))
-
+                logger.info('# Validation # SSIM: {:.4e}.'.format(avg_ssim))
+                logger.info('# Validation # fix SSIM: {:.4e}.'.format(avg_bic_ssim))
                 logger_val.info('<epoch:{:3d}, iter:{:8,d}> psnr: {:.4e}.'.format(epoch, current_step, avg_psnr))
                 logger_val.info('<epoch:{:3d}, iter:{:8,d}> fix psnr: {:.4e}.'.format(epoch, current_step, avg_bic_psnr))
+                logger_val.info('<epoch:{:3d}, iter:{:8,d}> ssim: {:.4e}.'.format(epoch, current_step, avg_ssim))
+                logger_val.info('<epoch:{:3d}, iter:{:8,d}> fix ssim: {:.4e}.'.format(epoch, current_step, avg_bic_ssim))
                 # tensorboard logger
 
             #### save models and training states

@@ -1,5 +1,5 @@
 #### general settings
-name: resize_net_debug
+name: resize_net
 use_tb_logger: true
 model: resize
 distortion: sr
@@ -55,12 +55,12 @@ train:
   lr_A: !!float 1e-4
   beta1: 0.9
   beta2: 0.999
-  niter: 2000000
-  warmup_iter: -1 # no warm up
+  niter: 500000
+  warmup_iter: -1  # no warm up
 
   lr_scheme: MultiStepLR
-  lr_steps: [1000000]
-  lr_gamma: 0.3
+  lr_steps: [200000, 300000, 350000, 400000]
+  lr_gamma: 0.5
   # lr_scheme: CosineAnnealingLR_Restart
   # T_period: [250000, 250000]
   # restarts: [250000]

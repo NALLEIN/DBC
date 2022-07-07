@@ -8,6 +8,7 @@ import random
 import torch.nn as nn
 from torch.nn.parallel import DataParallel, DistributedDataParallel
 import torch.nn.functional as F
+from pytorch_msssim import ms_ssim
 import models.lr_scheduler as lr_scheduler
 from .base_model import BaseModel
 from models.modules.loss import ReconstructionLoss
@@ -221,6 +222,7 @@ class ResizeModel(BaseModel):
             fake_H_bic = self.yuvUpsample(ref_L, h, w)
             self.fake_H_bic = yuv4202rgb(fake_H_bic)
             self.psnr_fix = 10 * torch.log10(1**2 / torch.mean((real_H - fake_H_bic)**2))
+            self.ssim_fix = ms_ssim(real_H, fake_H_bic, data_range=1.0)
 
             lr = self.netG(x=real_H, up=False)  # forward downscaling
             self.forw_L = yuv4202rgb(lr)
@@ -229,6 +231,7 @@ class ResizeModel(BaseModel):
             fake_H = self.netG(x=lr, up=True)
             self.fake_H = yuv4202rgb(fake_H)
             self.psnr = 10 * torch.log10(1**2 / torch.mean((real_H - fake_H)**2))
+            self.ssim = ms_ssim(real_H, fake_H, data_range=1.0)
 
     def downscale(self, HR_img):
         self.netG.eval()
@@ -254,6 +257,8 @@ class ResizeModel(BaseModel):
         out_dict['SR_bic'] = self.fake_H_bic.detach()[0].float().cpu()
         out_dict['PSNR_fix'] = self.psnr_fix.detach().item()
         out_dict['PSNR'] = self.psnr.detach().item()
+        out_dict['SSIM_fix'] = self.ssim_fix.detach().item()
+        out_dict['SSIM'] = self.ssim.detach().item()
 
         return out_dict
 
